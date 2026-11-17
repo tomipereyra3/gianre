@@ -1,5 +1,5 @@
 import * as S from './store.js';
-import { h, fill, icon, plate, avatar, field, input, autosize, snack, cerrarSnackViejo, menu } from './ui.js';
+import { h, fill, icon, plate, avatar, field, input, autosize, snack, cerrarSnackViejo } from './ui.js';
 import { dibujarReporte, archivoPNG, archivoPDF, FUENTES } from './report.js';
 
 const app = document.getElementById('app');
@@ -43,6 +43,7 @@ const rutas = [
 ];
 
 let salir = null;
+let enfocar = null;
 let rutaActual = null;
 const scrolls = {};
 const ruta = () => location.hash.slice(1) || '/';
@@ -81,6 +82,9 @@ function render({ pop = false, mantener = false } = {}) {
   app.replaceChildren(el);
   scrollTo(0, y);
   sombraBarra();
+  // Enfocar en el mismo toque que abrió la pantalla: así el teclado sube solo (iOS incluido).
+  if (enfocar) enfocar.focus({ preventScroll: true });
+  enfocar = null;
 }
 
 const refrescar = () => render({ mantener: true });
@@ -184,19 +188,25 @@ function hoja(tituloHoja, contenido, { onSubmit, foco = false } = {}) {
   return form;
 }
 
+// Un auto se reconoce por la patente; si no la cargaron, por el cliente.
+const identidad = (a, c, size = '') =>
+  a.patente ? plate(a.patente, size) : h('span', { class: `ident ${size}` }, avatar(c, size));
+
+const mayusculas = (t) => t.trim().replace(/(^|\s)(\p{L})/gu, (_, s, l) => s + l.toUpperCase());
+
 function filaAuto(a, c, cuando, onclick) {
   const pend = S.pendientes(a.id).items;
   const urgente = pend.some((i) => i.estado === 'urgente');
-  const nombre = S.nombreAuto(a);
-  const sub = [nombre ? c?.nombre : null, cuando].filter(Boolean).join(' · ');
+  const principal = S.nombreAuto(a) || c?.nombre;
+  const sub = principal ? [S.nombreAuto(a) ? c?.nombre : null, cuando].filter(Boolean).join(' · ') : '';
   return h(
     'button',
     { class: 'row', type: 'button', onclick: onclick || (() => go('/auto/' + a.id)) },
-    plate(a.patente),
+    identidad(a, c),
     h(
       'span',
       { class: 'row-main' },
-      h('span', { class: 'row-title' }, nombre || c?.nombre || 'Auto'),
+      h('span', { class: 'row-title' }, principal || mayusculas(cuando)),
       sub ? h('span', { class: 'row-sub' }, sub) : null,
     ),
     pend.length
@@ -215,23 +225,28 @@ function filaAuto(a, c, cuando, onclick) {
 
 // ---------- Bienvenida
 
+// Un solo dato, una sola vez: el nombre que encabeza cada diagnóstico.
 function bienvenida() {
-  const nombre = input({ placeholder: 'Ej: Taller Rodríguez', autocapitalize: 'words', enterkeyhint: 'next' });
-  const tel = input({ type: 'tel', inputmode: 'tel', placeholder: 'Opcional', enterkeyhint: 'done' });
+  const nombre = input({
+    class: 'input big',
+    placeholder: 'Ej: Taller Rodríguez',
+    autocapitalize: 'words',
+    enterkeyhint: 'go',
+    'aria-label': 'Nombre del taller',
+  });
   const empezar = () => {
     const n = nombre.value.trim();
     if (!n) {
       nombre.focus();
       return sacudir(nombre);
     }
-    S.db.taller = { nombre: n, telefono: tel.value.trim(), direccion: '', logo: null };
+    S.db.taller = { nombre: n, telefono: '', direccion: '', logo: null };
     S.save();
     history.replaceState({ depth: 0 }, '', '#/');
     render();
   };
-  enterPasaA(nombre, tel);
-  enterPasaA(tel, empezar);
-  requestAnimationFrame(() => nombre.focus());
+  enterPasaA(nombre, empezar);
+  enfocar = nombre;
   return h(
     'div',
     { class: 'screen bienvenida' },
@@ -241,7 +256,7 @@ function bienvenida() {
       marca(),
       h('h1', null, '¿Cómo se llama tu taller?'),
       h('p', { class: 'lead' }, 'Va a aparecer en cada diagnóstico que mandes.'),
-      h('div', { class: 'fields' }, field('Nombre del taller', nombre), field('WhatsApp del taller', tel)),
+      nombre,
     ),
     h('div', { class: 'bottombar' }, h('button', { class: 'btn btn-primary', type: 'button', onclick: empezar }, 'Empezar')),
   );
@@ -308,80 +323,74 @@ function vacioInicio() {
   );
 }
 
-// ---------- Nuevo diagnóstico: elegir o cargar el auto
+// ---------- Nuevo diagnóstico: un solo dato (patente o cliente) y a escribir
 
 function nuevo() {
-  refrescarListas();
   let q = '';
   const resultados = h('div');
-  const modelo = input({ placeholder: 'Ej: Fiat Cronos', autocapitalize: 'words', enterkeyhint: 'next' });
-  const anio = input({ inputmode: 'numeric', maxlength: '4', enterkeyhint: 'next' });
-  const nombre = input({ placeholder: 'Nombre', autocapitalize: 'words', list: 'dl-clientes', enterkeyhint: 'next' });
-  const tel = input({ type: 'tel', inputmode: 'tel', placeholder: 'Ej: 11 2345 6789', enterkeyhint: 'done' });
-  completarTelefono(nombre, tel);
 
-  const formulario = h(
-    'div',
-    { class: 'nuevo-form', hidden: true },
-    titulo('Auto nuevo'),
-    h(
-      'div',
-      { class: 'fields pad' },
-      h('div', { class: 'fields-row' }, field('Marca y modelo', modelo), field('Año', anio, 'w-anio')),
-      field('Cliente', nombre),
-      field('WhatsApp', tel),
-    ),
-  );
-  const cta = h(
-    'div',
-    { class: 'bottombar', hidden: true },
-    h('button', { class: 'btn btn-primary', type: 'button', onclick: crear }, 'Continuar'),
-  );
-
-  const patente = h('input', {
-    placeholder: 'Patente',
-    maxlength: '10',
-    autocapitalize: 'characters',
+  const campo = h('input', {
+    class: 'input big',
+    placeholder: 'Patente o cliente',
+    maxlength: '40',
+    autocapitalize: 'words',
     autocomplete: 'off',
     autocorrect: 'off',
     spellcheck: 'false',
-    enterkeyhint: 'next',
-    'aria-label': 'Patente',
+    enterkeyhint: 'go',
+    'aria-label': 'Patente o cliente',
     oninput: (e) => {
       q = e.target.value;
-      // Al completar la patente, se acomoda sola: AD 482 KJ / ABC 123.
+      // La patente se acomoda sola: AD 482 KJ / ABC 123.
       const f = S.fmtPatente(q);
-      if (f.includes(' ') && f !== q && e.target.selectionStart === q.length) e.target.value = f;
+      if (S.parecePatente(q) && f.includes(' ') && f !== q && e.target.selectionStart === q.length) {
+        e.target.value = f;
+      }
       actualizar();
     },
   });
-  enterPasaA(patente, () => {
-    const ex = S.autoPorPatente(q);
-    if (ex) empezarCon(ex);
-    else if (!formulario.hidden) modelo.focus();
-  });
-  enterPasaA(modelo, anio);
-  enterPasaA(anio, nombre);
-  enterPasaA(nombre, tel);
-  enterPasaA(tel, crear);
+
+  let primero = null; // lo que hace Enter: la primera fila de la lista
+  enterPasaA(campo, () => primero?.());
 
   function actualizar() {
-    const qp = S.normPatente(q);
-    const exacto = S.autoPorPatente(qp);
-    const matches = S.buscarAutos(q).slice(0, 5);
-    fill(resultados,
-      !qp && matches.length ? titulo('Recientes') : null,
-      matches.length
-        ? h(
-            'div',
-            { class: 'card' },
-            matches.map(({ a, c, t }) => filaAuto(a, c, S.hace(t), () => empezarCon(a))),
-          )
-        : null,
+    const t = q.trim();
+    const esPatente = S.parecePatente(t);
+    const qp = S.normPatente(t);
+    const exacto = esPatente
+      ? S.autoPorPatente(qp)
+      : S.buscarAutos(t).find(({ c }) => c && S.fold(c.nombre) === S.fold(t))?.a;
+    const matches = S.buscarAutos(t).slice(0, 5);
+    if (exacto) matches.sort((x, y) => (y.a === exacto) - (x.a === exacto));
+
+    const puedeCrear = t.length >= 2 && !(esPatente && exacto);
+    // Una patente completa que no existe, o un nombre sin coincidencias: lo nuevo va primero.
+    const nuevoPrimero = puedeCrear && !exacto && (!matches.length || (esPatente && qp.length >= 6));
+    const nueva = puedeCrear ? filaNueva(t, esPatente, qp) : null;
+
+    const filas = matches.map(({ a, c, t: ts }) => filaAuto(a, c, S.hace(ts), () => empezarCon(a)));
+    primero = nuevoPrimero || !matches.length ? (puedeCrear ? crear : null) : () => empezarCon(matches[0].a);
+
+    fill(
+      resultados,
+      !t && matches.length ? titulo('Recientes') : null,
+      filas.length || nueva ? h('div', { class: 'card' }, nuevoPrimero ? [nueva, filas] : [filas, nueva]) : null,
     );
-    // Mientras haya coincidencias, el formulario espera a que la patente esté completa.
-    formulario.hidden = !(qp.length >= 2 && !exacto && (!matches.length || qp.length >= 6));
-    cta.hidden = formulario.hidden;
+  }
+
+  function filaNueva(t, esPatente, qp) {
+    return h(
+      'button',
+      { class: 'row nueva', type: 'button', onclick: crear },
+      esPatente ? plate(qp) : h('span', { class: 'ident' }, avatar({ nombre: t })),
+      h(
+        'span',
+        { class: 'row-main' },
+        h('span', { class: 'row-title' }, esPatente ? 'Auto nuevo' : mayusculas(t)),
+        esPatente ? null : h('span', { class: 'row-sub' }, 'Cliente nuevo'),
+      ),
+      h('span', { class: 'go' }, icon('chevron')),
+    );
   }
 
   function empezarCon(a) {
@@ -390,29 +399,28 @@ function nuevo() {
   }
 
   function crear() {
-    const qp = S.normPatente(q);
-    if (qp.length < 2) return patente.focus();
-    const c = S.clientePara({ nombre: nombre.value, telefono: tel.value });
-    const a = S.crearAuto({ patente: qp, modelo: modelo.value, anio: anio.value, clienteId: c?.id ?? null });
+    const t = q.trim();
+    if (t.length < 2) return sacudir(campo);
+    let a;
+    if (S.parecePatente(t)) a = S.crearAuto({ patente: t });
+    else a = S.crearAuto({ clienteId: S.clientePara({ nombre: mayusculas(t) }).id });
     S.save();
     empezarCon(a);
   }
 
   actualizar();
-  requestAnimationFrame(() => patente.focus());
+  enfocar = campo;
 
   return h(
     'div',
     { class: 'screen' },
     bar(iconBtn('close', 'Cerrar', () => volver('/')), h('div', { class: 'bar-title' }, 'Nuevo diagnóstico')),
-    h('div', { class: 'plate-input' }, patente),
+    h('div', { class: 'pad campo-nuevo' }, campo),
     resultados,
-    formulario,
-    cta,
   );
 }
 
-// ---------- Diagnóstico
+// ---------- Diagnóstico: se escribe como un mensaje de WhatsApp, una falla por renglón
 
 function editor(id) {
   const d = S.getDiag(id);
@@ -425,64 +433,45 @@ function editor(id) {
     S.save();
   };
   const guardar = () => S.save();
-
-  // Tres grupos, como los ve el cliente.
-  const secs = {};
-  for (const [k, label] of S.ESTADOS) {
-    const lista = h('div', { class: 'items' });
-    const cuenta = h('span', { class: 'count' });
-    const nuevoItem = h('input', {
-      placeholder: 'Agregar',
-      list: 'dl-items',
-      autocomplete: 'off',
-      autocapitalize: 'sentences',
-      enterkeyhint: 'enter',
-      'aria-label': `Agregar a ${label}`,
-      onblur: () => confirmar(k),
-    });
-    enterPasaA(nuevoItem, () => confirmar(k));
-    const el = h(
-      'section',
-      { class: 'sec', 'data-estado': k },
-      h('header', { class: 'sec-head' }, h('i', { class: 'dot' }), h('span', null, label), cuenta),
-      lista,
-      h('label', { class: 'add' }, h('span', { class: 'plus' }, icon('add')), nuevoItem),
-    );
-    secs[k] = { el, lista, cuenta, input: nuevoItem };
-  }
-
+  const lista = h('div', { class: 'items' });
   const filas = new Map();
 
-  function confirmar(k) {
-    const inp = secs[k].input;
-    const v = inp.value.trim();
-    if (!v) return;
-    inp.value = '';
-    agregar(k, v);
+  const nuevoItem = h('input', {
+    placeholder: 'Escribí una falla',
+    list: 'dl-items',
+    autocomplete: 'off',
+    autocapitalize: 'sentences',
+    enterkeyhint: 'enter',
+    'aria-label': 'Escribí una falla',
+    onblur: () => confirmar(),
+    // Si pegan una lista (ej: copiada de WhatsApp), cada renglón es una falla.
+    onpaste: (e) => {
+      const t = e.clipboardData?.getData('text') || '';
+      if (!/\n/.test(t)) return;
+      e.preventDefault();
+      for (const l of t.split(/\r?\n/)) {
+        const { texto, estado } = S.interpretarLinea(l);
+        if (texto) agregar(texto, estado);
+      }
+    },
+  });
+  enterPasaA(nuevoItem, () => confirmar());
+
+  function confirmar() {
+    const { texto, estado } = S.interpretarLinea(nuevoItem.value);
+    nuevoItem.value = '';
+    if (texto) agregar(texto, estado);
   }
 
-  function agregar(k, texto) {
-    const it = { id: S.uid(), texto, estado: k, hecho: null };
+  function agregar(texto, estado) {
+    const it = { id: S.uid(), texto, estado, hecho: null };
     d.items.push(it);
     guardar();
-    secs[k].lista.append(filaItem(it, true));
-    contar();
-  }
-
-  function contar() {
-    for (const [k] of S.ESTADOS) {
-      const n = d.items.filter((i) => i.estado === k).length;
-      secs[k].cuenta.textContent = n || '';
-    }
+    lista.append(filaItem(it, true));
     mostrarBanner();
   }
 
-  function ordenar(k) {
-    for (const it of d.items) if (it.estado === k && filas.get(it.id)) secs[k].lista.append(filas.get(it.id));
-  }
-
   function filaItem(it, animar = false) {
-    // textarea de una línea que crece: los ítems largos se leen enteros.
     const txt = autosize(
       h('textarea', {
         rows: '1',
@@ -490,7 +479,7 @@ function editor(id) {
         autocomplete: 'off',
         autocapitalize: 'sentences',
         enterkeyhint: 'done',
-        'aria-label': 'Ítem',
+        'aria-label': 'Falla',
         oninput: (e) => {
           it.texto = e.target.value.replace(/\n/g, ' ');
           guardar();
@@ -501,46 +490,37 @@ function editor(id) {
       }),
     );
     enterPasaA(txt, () => txt.blur());
-    const dotBtn = h(
+    // La prioridad cambia con un toque: Pronto → Urgente → Bien.
+    const chip = h(
       'button',
       {
-        class: 'dot-btn',
+        class: 'chip',
         type: 'button',
-        'aria-label': 'Cambiar grupo',
-        onclick: () =>
-          menu(
-            dotBtn,
-            S.ESTADOS.map(([k, label]) => ({
-              label,
-              estado: k,
-              checked: it.estado === k,
-              onclick: () => mover(it, k),
-            })),
-          ),
+        'data-estado': it.estado,
+        'aria-label': `Prioridad ${S.ESTADO_LABEL[it.estado]}. Tocá para cambiar.`,
+        onclick: () => {
+          it.estado = S.SIGUIENTE[it.estado];
+          chip.dataset.estado = it.estado;
+          chip.lastChild.textContent = S.ESTADO_LABEL[it.estado];
+          chip.setAttribute('aria-label', `Prioridad ${S.ESTADO_LABEL[it.estado]}. Tocá para cambiar.`);
+          chip.classList.remove('tap');
+          void chip.offsetWidth;
+          chip.classList.add('tap');
+          guardar();
+        },
       },
       h('i', { class: 'dot' }),
+      h('span', null, S.ESTADO_LABEL[it.estado]),
     );
     const row = h(
       'div',
       { class: `item${animar ? ' nuevo' : ''}` },
-      dotBtn,
+      chip,
       txt,
       h('button', { class: 'x', type: 'button', 'aria-label': 'Quitar', onclick: () => quitar(it, true) }, icon('close')),
     );
     filas.set(it.id, row);
     return row;
-  }
-
-  function mover(it, k) {
-    if (it.estado === k) return;
-    it.estado = k;
-    guardar();
-    const row = filas.get(it.id);
-    secs[k].lista.append(row);
-    row.classList.remove('nuevo');
-    void row.offsetWidth;
-    row.classList.add('nuevo');
-    contar();
   }
 
   function quitar(it, conDeshacer) {
@@ -549,18 +529,18 @@ function editor(id) {
     d.items.splice(i, 1);
     guardar();
     filas.get(it.id)?.remove();
-    contar();
+    mostrarBanner();
     if (conDeshacer && it.texto.trim()) {
       snack(`Se quitó “${it.texto.trim()}”`, 'Deshacer', () => {
         d.items.splice(Math.min(i, d.items.length), 0, it);
         guardar();
-        ordenar(it.estado);
-        contar();
+        for (const x of d.items) if (filas.get(x.id)) lista.append(filas.get(x.id));
+        mostrarBanner();
       });
     }
   }
 
-  for (const it of d.items) secs[it.estado]?.lista.append(filaItem(it));
+  for (const it of d.items) lista.append(filaItem(it));
 
   // Lo que quedó pendiente de la visita anterior, a un toque.
   const anterior = S.pendientes(a.id, d.id);
@@ -568,7 +548,8 @@ function editor(id) {
   function mostrarBanner() {
     const faltan = anterior.items.filter((p) => !d.items.some((i) => S.fold(i.texto) === S.fold(p.texto)));
     const ver = anterior.diag && anterior.diag.fecha < d.fecha && !d.arrastrado && !d.enviado && faltan.length;
-    fill(bannerBox,
+    fill(
+      bannerBox,
       ver
         ? h(
             'div',
@@ -590,7 +571,7 @@ function editor(id) {
                 type: 'button',
                 onclick: () => {
                   d.arrastrado = true;
-                  for (const p of faltan) agregar(p.estado, p.texto.trim());
+                  for (const p of faltan) agregar(p.texto.trim(), p.estado);
                 },
               },
               'Agregar',
@@ -599,8 +580,9 @@ function editor(id) {
         : null,
     );
   }
-  contar();
+  mostrarBanner();
 
+  // Kilometraje y nota: solo si los quieren, escondidos detrás de un "+".
   const km = h('input', {
     inputmode: 'numeric',
     placeholder: '0',
@@ -615,6 +597,13 @@ function editor(id) {
     },
   });
   enterPasaA(km, () => km.blur());
+  const kmBox = h(
+    'label',
+    { class: 'km', hidden: !d.km },
+    h('span', null, 'Kilometraje'),
+    km,
+    h('span', { class: 'unit' }, 'km'),
+  );
 
   const nota = autosize(
     h('textarea', {
@@ -629,6 +618,26 @@ function editor(id) {
       },
     }),
   );
+  const notaBox = h('div', { class: 'nota-box', hidden: !(d.nota || '').trim() }, nota);
+
+  const extra = (label, box, foco) => {
+    const b = h(
+      'button',
+      {
+        class: 'chip-add',
+        type: 'button',
+        hidden: !box.hidden,
+        onclick: () => {
+          box.hidden = false;
+          b.hidden = true;
+          foco.focus();
+        },
+      },
+      icon('add'),
+      label,
+    );
+    return b;
+  };
 
   function eliminar() {
     const tenia = !S.vacio(d);
@@ -644,6 +653,9 @@ function editor(id) {
       });
   }
 
+  // Diagnóstico nuevo: el teclado ya abierto, listo para escribir.
+  if (!d.items.length) enfocar = nuevoItem;
+
   const nombre = S.nombreAuto(a);
   return h(
     'div',
@@ -653,24 +665,34 @@ function editor(id) {
       h(
         'div',
         { class: 'bar-id' },
-        plate(a.patente, 'sm'),
+        identidad(a, c, 'sm'),
         h(
           'div',
           { class: 'bar-id-text' },
-          h('b', null, nombre || c?.nombre || 'Auto'),
+          h('b', null, nombre || c?.nombre || 'Diagnóstico'),
           h('small', null, [nombre ? c?.nombre : null, S.fmtFecha(d.fecha)].filter(Boolean).join(' · ')),
         ),
       ),
       iconBtn('trash', 'Eliminar diagnóstico', eliminar),
     ),
-    h('label', { class: 'km' }, h('span', null, 'Kilometraje'), km, h('span', { class: 'unit' }, 'km')),
     bannerBox,
-    S.ESTADOS.map(([k]) => secs[k].el),
-    h('div', { class: 'pad nota-box' }, nota),
+    h(
+      'section',
+      { class: 'lista-fallas' },
+      lista,
+      h('label', { class: 'add' }, h('span', { class: 'plus' }, icon('add')), nuevoItem),
+    ),
+    h('div', { class: 'extras' }, extra('Kilometraje', kmBox, km), extra('Nota', notaBox, nota)),
+    kmBox,
+    notaBox,
     h(
       'div',
       { class: 'bottombar' },
-      h('button', { class: 'btn btn-ghost', type: 'button', onclick: () => verPrevia(d) }, icon('eye'), 'Ver'),
+      h(
+        'button',
+        { class: 'btn btn-ghost btn-icon', type: 'button', 'aria-label': 'Ver cómo queda', title: 'Ver cómo queda', onclick: () => verPrevia(d) },
+        icon('eye'),
+      ),
       h('button', { class: 'btn btn-wa', type: 'button', onclick: () => enviar(d, 'png') }, icon('wa'), 'Enviar por WhatsApp'),
     ),
   );
@@ -678,7 +700,10 @@ function editor(id) {
 
 // ---------- Envío
 
-const datosReporte = (d) => ({ taller: S.db.taller, logo: logoImg, auto: S.getAuto(d.autoId), diag: d });
+const datosReporte = (d) => {
+  const auto = S.getAuto(d.autoId);
+  return { taller: S.db.taller, logo: logoImg, auto, cliente: S.getCliente(auto?.clienteId), diag: d };
+};
 
 function nombreArchivo(d, ext) {
   const a = S.getAuto(d.autoId);
@@ -816,7 +841,9 @@ function fichaAuto(id) {
     h(
       'section',
       { class: 'hero' },
-      plate(a.patente, 'lg'),
+      a.patente
+        ? plate(a.patente, 'lg')
+        : h('button', { class: 'plate lg falta', type: 'button', onclick: () => editarAuto(a) }, h('b', null, '+ Patente')),
       a.modelo ? h('h1', null, a.modelo) : null,
       detalle ? h('p', null, detalle) : null,
     ),

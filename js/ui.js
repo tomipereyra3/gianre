@@ -96,9 +96,18 @@ export function autosize(t) {
     t.style.height = t.scrollHeight + 'px';
   };
   t.addEventListener('input', fit);
+  t.dataset.autosize = '';
   requestAnimationFrame(fit);
   return t;
 }
+
+// Si el teléfono gira, los renglones cambian de ancho: reacomodar.
+addEventListener('resize', () => {
+  for (const t of document.querySelectorAll('textarea[data-autosize]')) {
+    t.style.height = 'auto';
+    t.style.height = t.scrollHeight + 'px';
+  }
+});
 
 // ---------- Snackbar (con "Deshacer" en vez de "¿Estás seguro?")
 

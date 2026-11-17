@@ -93,7 +93,7 @@ function drawPlate(ctx, patente, x, y, w, h) {
 }
 
 // Una sola función mide y dibuja, así el alto siempre coincide.
-function layout(ctx, draw, { taller, logo, auto, diag }) {
+function layout(ctx, draw, { taller, logo, auto, cliente, diag }) {
   ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
   if (draw) {
@@ -161,26 +161,30 @@ function layout(ctx, draw, { taller, logo, auto, diag }) {
   }
   y += 34 + 24;
 
-  // Auto
+  // Auto (si no cargaron patente, lo identifica el cliente)
   const pad = 36;
+  const conPatente = !!auto.patente;
   ctx.font = font(700, 56, true);
   setSpacing(ctx, 3);
-  const pw = Math.max(250, ctx.measureText(fmtPatente(auto.patente) || 'S/P').width + 64);
+  const pw = conPatente ? Math.max(250, ctx.measureText(fmtPatente(auto.patente)).width + 64) : 0;
   setSpacing(ctx, 0);
-  const ph = 112;
-  const tx = P + pad + pw + 32;
+  const ph = conPatente ? 112 : 0;
+  const tx = conPatente ? P + pad + pw + 32 : P + pad;
   const tw = W - P - pad - tx;
   ctx.font = font(700, 38);
-  const modelo = nombreAuto(auto) ? wrap(ctx, nombreAuto(auto), tw) : [];
+  const tituloAuto = nombreAuto(auto) || (conPatente ? '' : cliente?.nombre || '');
+  const modelo = tituloAuto ? wrap(ctx, tituloAuto, tw) : [];
   const km = diag.km ? `${fmtKm(diag.km)} km` : '';
   const textH = modelo.length * 46 + (km ? (modelo.length ? 44 : 36) : 0);
   const innerH = Math.max(ph, textH);
-  const cardH = innerH + pad * 2;
-  if (draw) {
+  const cardH = innerH ? innerH + pad * 2 : 0;
+  // Si solo está la patente, la caja abraza la patente.
+  const cardW = modelo.length || km ? W - 2 * P : pw + pad * 2;
+  if (draw && cardH) {
     ctx.fillStyle = C.paper;
-    rr(ctx, P, y, W - 2 * P, cardH, 32);
+    rr(ctx, P, y, cardW, cardH, 32);
     ctx.fill();
-    drawPlate(ctx, auto.patente, P + pad, y + pad + (innerH - ph) / 2, pw, ph);
+    if (conPatente) drawPlate(ctx, auto.patente, P + pad, y + pad + (innerH - ph) / 2, pw, ph);
   }
   let yy = y + pad + (innerH - textH) / 2;
   ctx.font = font(700, 38);
@@ -198,7 +202,7 @@ function layout(ctx, draw, { taller, logo, auto, diag }) {
       ctx.fillText(km, tx, yy + (modelo.length ? 8 : 0));
     }
   }
-  y += cardH + 56;
+  if (cardH) y += cardH + 56;
 
   // Secciones
   for (const s of SECCIONES) {

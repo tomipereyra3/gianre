@@ -717,11 +717,6 @@ textarea:focus-visible {
   flex: 1;
 }
 
-/* Mientras se escribe un ítem, el teclado manda. */
-.editor:has(.sec :is(input, textarea):focus) .bottombar {
-  display: none;
-}
-
 /* ---------- Formularios */
 
 .fields {
@@ -861,7 +856,7 @@ textarea.input {
   align-items: center;
   gap: 12px;
   height: 58px;
-  margin: 6px 16px 0;
+  margin: 12px 16px 0;
   padding: 0 18px;
   border-radius: 18px;
   background: var(--surface);
@@ -934,32 +929,6 @@ textarea.input {
   color: var(--text);
 }
 
-.sec {
-  margin: 12px 16px 0;
-  padding: 4px 0 2px;
-  background: var(--surface);
-  border-radius: 20px;
-  box-shadow: inset 0 0 0 1px var(--line);
-}
-
-.sec-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 18px 6px;
-  font-weight: 700;
-  font-size: 15px;
-  color: var(--c-text);
-}
-
-.sec-head .count {
-  margin-left: auto;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--faint);
-  font-variant-numeric: tabular-nums;
-}
-
 .dot {
   width: 12px;
   height: 12px;
@@ -982,7 +951,7 @@ textarea.input {
   content: '';
   position: absolute;
   top: 0;
-  left: 52px;
+  left: 16px;
   right: 16px;
   height: 1px;
   background: var(--line);
@@ -1001,25 +970,8 @@ textarea.input {
 }
 
 @keyframes aparecer {
-  from { opacity: 0; transform: translateY(-4px); background: var(--c-bg); }
+  from { opacity: 0; transform: translateY(-4px); background: var(--surface-2); }
   to { opacity: 1; transform: none; background: transparent; }
-}
-
-.dot-btn {
-  width: 46px;
-  height: 48px;
-  display: grid;
-  place-items: center;
-  flex: none;
-  border-radius: 12px;
-}
-
-.dot-btn:active {
-  background: var(--surface-2);
-}
-
-.dot-btn .dot {
-  box-shadow: 0 0 0 4px var(--c-bg);
 }
 
 .item {
@@ -1088,56 +1040,6 @@ textarea.input {
 
 .nota {
   border-radius: 20px;
-}
-
-/* ---------- Menú */
-
-.menu-scrim {
-  position: fixed;
-  inset: 0;
-  z-index: 55;
-}
-
-.menu {
-  position: fixed;
-  z-index: 56;
-  min-width: 190px;
-  padding: 6px;
-  background: var(--surface);
-  border-radius: 16px;
-  box-shadow: var(--shadow);
-  animation: menu 0.14s ease-out;
-  transform-origin: top left;
-}
-
-@keyframes menu {
-  from { opacity: 0; transform: scale(0.95); }
-}
-
-.menu button {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  width: 100%;
-  height: 48px;
-  padding: 0 14px;
-  border-radius: 11px;
-  font-weight: 500;
-  text-align: left;
-}
-
-.menu button span {
-  flex: 1;
-}
-
-.menu button[aria-checked='true'] {
-  background: var(--surface-2);
-  font-weight: 700;
-}
-
-.menu button .icon {
-  width: 20px;
-  height: 20px;
 }
 
 /* ---------- Ficha */
@@ -1442,4 +1344,181 @@ textarea.input {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* ---------- Un solo campo para empezar */
+
+.input.big {
+  height: 64px;
+  padding: 0 20px;
+  border-radius: 18px;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.input.big::placeholder {
+  font-weight: 500;
+}
+
+.campo-nuevo {
+  margin: 8px 0 4px;
+}
+
+.campo-nuevo + div > .card {
+  margin-top: 12px;
+}
+
+.bienvenida .input.big {
+  margin-top: 4px;
+}
+
+.ident {
+  width: 90px;
+  display: flex;
+  justify-content: center;
+  flex: none;
+}
+
+.ident.sm,
+.ident.lg {
+  width: auto;
+}
+
+.avatar.sm {
+  width: 34px;
+  height: 34px;
+  font-size: 13px;
+}
+
+.row.nueva .row-title {
+  font-weight: 700;
+}
+
+.row .go {
+  color: var(--faint);
+  flex: none;
+}
+
+.plate.lg.falta {
+  background: transparent;
+  color: var(--muted);
+  border: 2.5px dashed var(--faint);
+  box-shadow: none;
+}
+
+.plate.lg.falta::before {
+  display: none;
+}
+
+.plate.lg.falta b {
+  font-size: 22px;
+  padding: 18px 18px 19px;
+}
+
+/* ---------- Editor: lista + prioridad con un toque */
+
+.lista-fallas {
+  margin: 12px 16px 0;
+  padding: 4px 0 2px;
+  background: var(--surface);
+  border-radius: 20px;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.lista-fallas .item {
+  padding-left: 8px;
+  gap: 10px;
+}
+
+.lista-fallas .item .x {
+  width: 40px;
+}
+
+.lista-fallas .add {
+  padding-left: 8px;
+}
+
+/* La flecha que agrega el navegador a las sugerencias no suma nada. */
+input::-webkit-calendar-picker-indicator {
+  display: none !important;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  flex: none;
+  width: 84px;
+  height: 32px;
+  margin-top: 9px;
+  border-radius: 16px;
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.chip .dot {
+  width: 8px;
+  height: 8px;
+}
+
+.chip.tap {
+  animation: tap 0.22s ease-out;
+}
+
+@keyframes tap {
+  40% { transform: scale(0.9); }
+}
+
+.lista-fallas .add .plus {
+  width: 94px;
+  justify-content: end;
+  padding-right: 10px;
+}
+
+.lista-fallas .items:empty + .add .plus {
+  width: 46px;
+  justify-content: center;
+  padding-right: 0;
+}
+
+.lista-fallas .add:focus-within .plus {
+  color: var(--text);
+}
+
+.extras {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px 0;
+}
+
+.extras:not(:has(> :not([hidden]))) {
+  display: none;
+}
+
+.chip-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 16px 0 10px;
+  border-radius: 20px;
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.chip-add .icon {
+  width: 20px;
+  height: 20px;
+}
+
+.btn-icon {
+  width: 54px;
+  padding: 0;
+  flex: none;
 }

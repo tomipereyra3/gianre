@@ -9,6 +9,23 @@ export const ESTADOS = [
 ];
 export const ESTADO_LABEL = Object.fromEntries(ESTADOS);
 
+// Lo nuevo entra como "Pronto"; un toque lo pasa a Urgente, otro a Bien.
+export const ESTADO_INICIAL = 'pronto';
+export const SIGUIENTE = { pronto: 'urgente', urgente: 'bien', bien: 'pronto' };
+
+// Respeta cómo ya escriben en WhatsApp: ❌📌❗⚠️🔴 = Urgente, ✅✔️🟢 = Bien.
+const MARCA_URGENTE = /❌|\u{1F4CC}|❗|‼️?|⚠️?|\u{1F534}/gu;
+const MARCA_BIEN = /✅|✔️?|\u{1F7E2}/gu;
+export function interpretarLinea(linea) {
+  const urgente = !!linea.match(MARCA_URGENTE);
+  const bien = !!linea.match(MARCA_BIEN);
+  const texto = linea.replace(MARCA_URGENTE, '').replace(MARCA_BIEN, '').replace(/\s+/g, ' ').replace(/\s+\)/g, ')').trim();
+  return { texto, estado: urgente ? 'urgente' : bien ? 'bien' : ESTADO_INICIAL };
+}
+
+// Las patentes siempre tienen números; los nombres, casi nunca.
+export const parecePatente = (s) => /\d/.test(s || '');
+
 const blank = () => ({ taller: null, clientes: [], autos: [], diagnosticos: [] });
 
 function load() {
