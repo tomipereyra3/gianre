@@ -1,39 +1,29 @@
 // Arma lo que recibe el cliente: la imagen para WhatsApp y el PDF (A4).
-import {
-  fmtPatente,
-  esPatenteVieja,
-  fmtKm,
-  fmtFechaLarga,
-  nombreAuto,
-  fmtPrecio,
-  suma,
-  conPrecio,
-  iniciales,
-} from './store.js';
+// Fondo oscuro; lo principal son las fallas y la plata. El taller se ve por su logo y su contacto.
+import { fmtPatente, esPatenteVieja, fmtKm, fmtFechaLarga, nombreAuto, fmtPrecio, suma, conPrecio } from './store.js';
 
 const C = {
-  tinta: '#141414',
-  gris: '#5F5C55',
-  suave: '#8A867D',
-  linea: '#ECEAE4',
-  papel: '#F6F5F1',
-  cabecera: '#F3F2EE',
-  oscuro: '#121212',
-  claro: '#F4F4EF',
-  claroGris: '#A3A39C',
-  etiquetaOscura: '#8C8C86',
+  fondo: '#121212',
+  tarjeta: '#1C1C1C',
+  cabecera: '#202020',
+  linea: '#2A2A2A',
+  texto: '#F4F4EF',
+  gris: '#A3A39C',
+  suave: '#8C8C86',
+  mosaico: '#F4F4EF',
   acento: '#E9F516',
+  oscuro: '#121212',
   wa: '#25D366',
   azul: '#0C1F99',
 };
 
-// Colores del semáforo para papel (más firmes que en la pantalla oscura).
+// Semáforo sobre fondo oscuro (los mismos colores que la app).
 const PRIO = {
-  urgente: { label: 'Urgente', dot: '#D7362B', bg: '#FBE7E5', text: '#B4261C' },
-  pronto: { label: 'Pronto', dot: '#E8890C', bg: '#FDEEDB', text: '#9A5400' },
-  bien: { label: 'Buen estado', dot: '#23864A', bg: '#E3F2E8', text: '#1B6B3A' },
+  urgente: { label: 'Urgente', dot: '#FF5C50', bg: 'rgba(255,92,80,0.16)', text: '#FF8A80' },
+  pronto: { label: 'Pronto', dot: '#FFA43B', bg: 'rgba(255,164,59,0.16)', text: '#FFB862' },
+  bien: { label: 'Buen estado', dot: '#43D17F', bg: 'rgba(67,209,127,0.16)', text: '#6FDC9C' },
 };
-const NO_SE_HIZO = { dot: '#A19D94', bg: '#EFEEE9', text: '#57534B' };
+const NO_SE_HIZO = { dot: '#8C8C86', bg: 'rgba(255,255,255,0.08)', text: '#C9C9C2' };
 
 const ORDEN = { urgente: 0, pronto: 1, bien: 2 };
 const porPrioridad = (items) => [...items].sort((x, y) => ORDEN[x.estado] - ORDEN[y.estado]);
@@ -302,137 +292,114 @@ function medidaLogo(logo, maxW, maxH) {
   return { w: logo.naturalWidth * k, h: logo.naturalHeight * k };
 }
 
-// Sin logo: un cuadrado oscuro con las iniciales del taller.
-function cajaLogo(ctx, logo, nombre, x, y, lado) {
-  if (logo && logo.complete && logo.naturalWidth) {
-    const m = medidaLogo(logo, lado * 3, lado);
-    ctx.drawImage(logo, x, y + (lado - m.h) / 2, m.w, m.h);
-    return m.w;
-  }
-  rr(ctx, x, y, lado, lado, lado * 0.28);
-  ctx.fillStyle = C.oscuro;
-  ctx.fill();
-  texto(ctx, iniciales(nombre) || 'T', x + lado / 2, y + lado / 2 + lado * 0.03, f(800, lado * 0.36), '#FFFFFF', 'center', 0, 'middle');
-  return lado;
-}
-
-// Membrete: logo, nombre y contacto; a la derecha, qué es y la fecha.
-function membrete(ctx, { x, y, ancho: an, k, taller, logo, titulo, fecha }) {
-  const nombre = taller?.nombre || 'Taller';
-  const lado = 46 * k;
-  const wLogo = cajaLogo(ctx, logo, nombre, x, y, lado);
-  const fsT = 8.5 * k;
-  const lsT = 1.4 * k;
-  const pillW = ancho(ctx, titulo, f(800, fsT), lsT) - lsT + 26 * k;
-  const pillH = 22 * k;
-  const der = x + an;
-  rr(ctx, der - pillW, y + 2 * k, pillW, pillH, pillH / 2);
-  ctx.fillStyle = C.tinta;
-  ctx.fill();
-  texto(ctx, titulo, der - pillW / 2, y + 2 * k + pillH / 2 + 0.4 * k, f(800, fsT), '#FFFFFF', 'center', lsT, 'middle');
-  const yFecha = y + 2 * k + pillH + 8 * k;
-  texto(ctx, fecha, der, yFecha, f(500, 10 * k), C.gris, 'right');
-
-  const tx = x + wLogo + 14 * k;
-  const maxW = der - pillW - 18 * k - tx;
-  ctx.font = f(800, 20 * k);
-  const lineas = wrap(ctx, nombre, maxW);
+// Arriba: el logo del taller (sobre un recuadro claro, así se ve cualquier logo) y su contacto.
+// Debajo, grande, qué es el documento y la fecha; al lado, el vehículo en chico.
+function encabezado(ctx, { x, y, ancho: an, k, angosto, taller, logo, titulo, fecha, auto, cliente, diag }) {
+  const conLogo = !!(logo && logo.complete && logo.naturalWidth);
   const tel = (taller?.telefono || '').trim();
   const dir = (taller?.direccion || '').trim();
-  const fsC = 9.5 * k;
-  const g = tel ? fsC * 1.3 : 0;
-  ctx.font = f(500, fsC);
-  const contacto = wrap(ctx, [tel, dir].filter(Boolean).join('  ·  '), maxW - (g ? g + 5 * k : 0)).filter(Boolean);
-  const lhN = 23 * k;
-  const lhC = 14 * k;
-  const alto = lineas.length * lhN + (contacto.length ? 3 * k + contacto.length * lhC : 0);
-  let ty = y + Math.max(0, (lado - alto) / 2);
-  for (const l of lineas) {
-    texto(ctx, l, tx, ty, f(800, 20 * k), C.tinta);
-    ty += lhN;
+  let altoFila = 0;
+  let anchoLogo = 0;
+  if (conLogo) {
+    const m = medidaLogo(logo, 150 * k, 34 * k);
+    const pad = 8 * k;
+    anchoLogo = m.w + 2 * pad;
+    rr(ctx, x, y, anchoLogo, m.h + 2 * pad, 10 * k);
+    ctx.fillStyle = C.mosaico;
+    ctx.fill();
+    ctx.drawImage(logo, x + pad, y + pad, m.w, m.h);
+    altoFila = m.h + 2 * pad;
   }
-  if (contacto.length) ty += 3 * k;
-  contacto.forEach((l, i) => {
-    let cx = tx;
-    if (i === 0 && g) {
-      glifoWA(ctx, tx, ty + (lhC - g) / 2, g);
-      cx += g + 5 * k;
+  if (tel || dir) {
+    const fs = 9.5 * k;
+    const lh = 13.5 * k;
+    const g = fs * 1.3;
+    const max = an - anchoLogo - 24 * k;
+    ctx.font = f(500, fs);
+    const lineas = [];
+    if (tel) lineas.push([tel, true]);
+    if (dir) for (const l of wrap(ctx, dir, max).slice(0, 2)) lineas.push([l, false]);
+    const top = y + Math.max(0, (altoFila - lineas.length * lh) / 2);
+    const der = x + an;
+    lineas.forEach(([t, wa], i) => {
+      const cy = top + i * lh + lh / 2;
+      texto(ctx, t, der, cy, f(500, fs), C.gris, 'right', 0, 'middle');
+      if (wa) glifoWA(ctx, der - ancho(ctx, t, f(500, fs)) - g - 5 * k, cy - g / 2, g);
+    });
+    altoFila = Math.max(altoFila, lineas.length * lh);
+  }
+  if (altoFila) y += altoFila + 26 * k;
+
+  const tarjeta = tarjetaVehiculo(ctx, { ancho: angosto ? an : Math.min(260 * k, an * 0.48), k, auto, cliente, diag });
+  const fsT = 30 * k;
+  const maxTitulo = angosto || !tarjeta ? an : an - tarjeta.ancho - 20 * k;
+  ctx.font = f(800, fsT);
+  const lineas = wrap(ctx, titulo, maxTitulo);
+  const altoTitulo = lineas.length * fsT * 1.08 + 8 * k + 11 * k * 1.3;
+  const pintarTitulo = (ty) => {
+    for (const l of lineas) {
+      texto(ctx, l, x, ty, f(800, fsT), C.texto);
+      ty += fsT * 1.08;
     }
-    texto(ctx, l, cx, ty + lhC / 2, f(500, fsC), C.gris, 'left', 0, 'middle');
-    ty += lhC;
-  });
-  return Math.max(y + lado, ty, yFecha + 12 * k) + 22 * k;
+    texto(ctx, fecha, x, ty + 8 * k, f(500, 11 * k), C.gris);
+  };
+  if (!tarjeta) {
+    pintarTitulo(y);
+    return y + altoTitulo + 26 * k;
+  }
+  if (angosto) {
+    pintarTitulo(y);
+    y += altoTitulo + 18 * k;
+    tarjeta.dibujar(x, y);
+    return y + tarjeta.alto + 30 * k;
+  }
+  const alto = Math.max(altoTitulo, tarjeta.alto);
+  pintarTitulo(y + (alto - altoTitulo) / 2);
+  tarjeta.dibujar(x + an - tarjeta.ancho, y + (alto - tarjeta.alto) / 2);
+  return y + alto + 26 * k;
 }
 
-// Franja oscura: la patente, el auto y el cliente.
-function franja(ctx, { x, y, ancho: an, k, apilado, auto, cliente, diag }) {
-  const pad = 16 * k;
+// El vehículo, en una tarjeta chica: patente, modelo, kilometraje y cliente.
+function tarjetaVehiculo(ctx, { ancho: an, k, auto, cliente, diag }) {
   const conPatente = !!auto?.patente;
   const modelo = nombreAuto(auto || {});
   const km = diag.km ? `${fmtKm(diag.km)} km` : '';
-  const hayAuto = !!(conPatente || modelo || km);
-  const hayCliente = !!(cliente && (cliente.nombre || cliente.telefono));
-  if (!hayAuto && !hayCliente) return y;
-
-  const altoPat = 46 * k;
+  const nombreCli = (cliente?.nombre || '').trim();
+  if (!conPatente && !modelo && !km && !nombreCli) return null;
+  const pad = 12 * k;
+  const altoPat = 24 * k;
   const wPat = conPatente ? medidaPatente(auto.patente, altoPat) : 0;
-  const fsL = 7.5 * k;
-  const lsL = 1.4 * k;
-  const alLado = hayCliente && hayAuto && !apilado;
-  const anchoCli = alLado ? 150 * k : 0;
-
-  const vx = x + pad + (conPatente ? wPat + 16 * k : 0);
-  const vFin = x + an - pad - (anchoCli ? anchoCli + 20 * k : 0);
-  ctx.font = f(700, 14 * k);
-  const lm = modelo ? wrap(ctx, modelo, vFin - vx).slice(0, 3) : [];
-  const vH = hayAuto ? fsL + 6 * k + lm.length * 17 * k + (km ? 15 * k : 0) : 0;
-  const filaAuto = hayAuto ? Math.max(conPatente ? altoPat : 0, vH) : 0;
-
-  const cx = anchoCli ? x + an - pad - anchoCli : x + pad;
-  const cw = anchoCli || an - 2 * pad;
-  ctx.font = f(700, 12.5 * k);
-  const ln = hayCliente ? wrap(ctx, cliente.nombre || '—', cw).slice(0, 2) : [];
-  const cH = hayCliente ? fsL + 6 * k + ln.length * 15.5 * k + (cliente.telefono ? 14 * k : 0) : 0;
-  const abajo = hayCliente && hayAuto && !alLado;
-  const sep = abajo ? 26 * k : 0;
-  const interior = alLado ? Math.max(filaAuto, cH) : filaAuto + sep + cH;
-  const H = interior + 2 * pad;
-
-  rr(ctx, x, y, an, H, 16 * k);
-  ctx.fillStyle = C.oscuro;
-  ctx.fill();
-  const top = y + pad;
-  if (hayAuto) {
-    const fy = top + (alLado ? (interior - filaAuto) / 2 : 0);
-    if (conPatente) dibujarPatente(ctx, auto.patente, x + pad, fy + (filaAuto - altoPat) / 2, altoPat);
-    let ty = fy + (filaAuto - vH) / 2;
-    texto(ctx, 'VEHÍCULO', vx, ty, f(700, fsL), C.etiquetaOscura, 'left', lsL);
-    ty += fsL + 6 * k;
-    for (const l of lm) {
-      texto(ctx, l, vx, ty, f(700, 14 * k), C.claro);
-      ty += 17 * k;
-    }
-    if (km) texto(ctx, km, vx, ty + k, f(500, 10 * k), C.claroGris);
-  }
-  if (hayCliente) {
-    let ty = top;
-    ctx.fillStyle = 'rgba(255,255,255,0.12)';
-    if (alLado) {
-      ctx.fillRect(cx - 20 * k, top + 2 * k, 0.75 * k, interior - 4 * k);
-      ty = top + (interior - cH) / 2;
-    } else if (abajo) {
-      ctx.fillRect(x + pad, top + filaAuto + sep / 2, an - 2 * pad, 0.75 * k);
-      ty = top + filaAuto + sep;
-    }
-    texto(ctx, 'CLIENTE', cx, ty, f(700, fsL), C.etiquetaOscura, 'left', lsL);
-    ty += fsL + 6 * k;
-    for (const l of ln) {
-      texto(ctx, l, cx, ty, f(700, 12.5 * k), C.claro);
-      ty += 15.5 * k;
-    }
-    if (cliente.telefono) texto(ctx, cliente.telefono, cx, ty + k, f(500, 10 * k), C.claroGris);
-  }
-  return y + H;
+  const tx = pad + (conPatente ? wPat + 12 * k : 0);
+  const tw = an - tx - pad;
+  ctx.font = f(700, 11.5 * k);
+  const l1 = modelo || nombreCli ? wrap(ctx, modelo || nombreCli, tw).slice(0, 2) : [];
+  const sub = [km, modelo ? nombreCli : ''].filter(Boolean).join(' · ');
+  ctx.font = f(500, 9.5 * k);
+  const l2 = sub ? wrap(ctx, sub, tw).slice(0, 2) : [];
+  const lh1 = 14.5 * k;
+  const lh2 = 12.5 * k;
+  const textH = l1.length * lh1 + l2.length * lh2 + (l1.length && l2.length ? 2 * k : 0);
+  const alto = Math.max(conPatente ? altoPat : 0, textH) + 2 * pad;
+  return {
+    ancho: an,
+    alto,
+    dibujar(x, y) {
+      rr(ctx, x, y, an, alto, 12 * k);
+      ctx.fillStyle = C.tarjeta;
+      ctx.fill();
+      if (conPatente) dibujarPatente(ctx, auto.patente, x + pad, y + (alto - altoPat) / 2, altoPat);
+      let ty = y + (alto - textH) / 2;
+      for (const l of l1) {
+        texto(ctx, l, x + tx, ty, f(700, 11.5 * k), C.texto);
+        ty += lh1;
+      }
+      if (l1.length && l2.length) ty += 2 * k;
+      for (const l of l2) {
+        texto(ctx, l, x + tx, ty, f(500, 9.5 * k), C.gris);
+        ty += lh2;
+      }
+    },
+  };
 }
 
 // Qué suma cada parte. Diagnóstico: urgente y pronto. Trabajo: lo hecho, lo que queda y lo que no se hizo.
@@ -451,27 +418,27 @@ function cuentas(trabajo, vivos, aResolver) {
   return { renglones: partes.length > 1 ? partes : [], etiqueta: 'TOTAL', total: suma(vivos) };
 }
 
-// Subtotales y el TOTAL resaltado en amarillo.
+// Subtotales y el TOTAL, grande y en amarillo.
 function bloqueTotales(ctx, { ancho: an, k, renglones, etiqueta, total }) {
-  const alto = renglones.length * 19 * k + (renglones.length ? 6 * k : 0) + 46 * k;
+  const alto = renglones.length * 20 * k + (renglones.length ? 6 * k : 0) + 54 * k;
   return {
     alto,
     dibujar(x, y) {
       let ty = y;
       for (const [lbl, valor, color] of renglones) {
-        const cy = ty + 9 * k;
+        const cy = ty + 10 * k;
         punto(ctx, x + 14 * k + 3.5 * k, cy, 3.5 * k, color);
-        texto(ctx, lbl, x + 14 * k + 13 * k, cy, f(500, 10.5 * k), C.gris, 'left', 0, 'middle');
-        texto(ctx, fmtPrecio(valor), x + an - 14 * k, cy, f(600, 10.5 * k), C.gris, 'right', 0, 'middle');
-        ty += 19 * k;
+        texto(ctx, lbl, x + 14 * k + 13 * k, cy, f(500, 11 * k), C.gris, 'left', 0, 'middle');
+        texto(ctx, fmtPrecio(valor), x + an - 14 * k, cy, f(600, 11 * k), C.texto, 'right', 0, 'middle');
+        ty += 20 * k;
       }
       if (renglones.length) ty += 6 * k;
-      const h = 46 * k;
-      rr(ctx, x, ty, an, h, 12 * k);
+      const h = 54 * k;
+      rr(ctx, x, ty, an, h, 14 * k);
       ctx.fillStyle = C.acento;
       ctx.fill();
-      texto(ctx, etiqueta, x + 14 * k, ty + h / 2 + 0.5 * k, f(800, 8.5 * k), C.oscuro, 'left', 1.5 * k, 'middle');
-      texto(ctx, fmtPrecio(total), x + an - 14 * k, ty + h / 2 + 0.5 * k, f(800, 20 * k), C.oscuro, 'right', 0, 'middle');
+      texto(ctx, etiqueta, x + 16 * k, ty + h / 2 + 0.5 * k, f(800, 9 * k), C.oscuro, 'left', 1.5 * k, 'middle');
+      texto(ctx, fmtPrecio(total), x + an - 16 * k, ty + h / 2 + 0.5 * k, f(800, 24 * k), C.oscuro, 'right', 0, 'middle');
     },
   };
 }
@@ -495,14 +462,15 @@ function bloqueNota(ctx, { ancho: an, k, nota }) {
   ctx.font = f(500, 11 * k);
   const lineas = wrap(ctx, nota, an - 2 * pad);
   const lh = 15.5 * k;
+  const alto = pad + 7.5 * k + 8 * k + lineas.length * lh + pad - 3 * k;
   return {
-    alto: pad + 7.5 * k + 8 * k + lineas.length * lh + pad - 3 * k,
+    alto,
     dibujar(x, y) {
-      rr(ctx, x, y, an, this.alto, 12 * k);
-      ctx.fillStyle = C.papel;
+      rr(ctx, x, y, an, alto, 12 * k);
+      ctx.fillStyle = C.tarjeta;
       ctx.fill();
       texto(ctx, 'NOTA DEL TALLER', x + pad, y + pad, f(800, 7.5 * k), C.suave, 'left', 1.3 * k);
-      lineas.forEach((l, i) => texto(ctx, l, x + pad, y + pad + 15.5 * k + i * lh, f(500, 11 * k), C.tinta));
+      lineas.forEach((l, i) => texto(ctx, l, x + pad, y + pad + 15.5 * k + i * lh, f(500, 11 * k), C.texto));
     },
   };
 }
@@ -519,7 +487,7 @@ function preparar({ diag, modo = 'diagnostico' }) {
     enBuenEstado: trabajo ? [] : vivos.filter((i) => i.estado === 'bien'),
     nota: trabajo ? '' : (diag.nota || '').trim(),
     precios,
-    titulo: trabajo ? 'TRABAJO REALIZADO' : precios ? 'PRESUPUESTO' : 'DIAGNÓSTICO',
+    titulo: trabajo ? 'Trabajo realizado' : precios ? 'Presupuesto' : 'Diagnóstico',
     fecha: fmtFechaLarga(trabajo ? ultimoHecho(diag) : diag.fecha),
   };
 }
@@ -535,11 +503,9 @@ function pintarImagen(ctx, datos) {
   const { taller, logo, auto, cliente, diag } = datos;
   const p = preparar(datos);
   const an = IW - 2 * IM;
-  ctx.fillStyle = '#FFFFFF';
+  ctx.fillStyle = C.fondo;
   ctx.fillRect(0, 0, IW, 40000);
-  let y = membrete(ctx, { x: IM, y: IM, ancho: an, k: IK, taller, logo, titulo: p.titulo, fecha: p.fecha });
-  const yf = franja(ctx, { x: IM, y, ancho: an, k: IK, apilado: true, auto, cliente, diag });
-  y = yf === y ? y : yf + 30;
+  let y = encabezado(ctx, { x: IM, y: IM, ancho: an, k: IK, angosto: true, taller, logo, titulo: p.titulo, fecha: p.fecha, auto, cliente, diag });
 
   const grupos = p.trabajo
     ? [
@@ -549,8 +515,8 @@ function pintarImagen(ctx, datos) {
       ]
     : ['urgente', 'pronto'].map((k) => ({ label: PRIO[k].label, p: PRIO[k], items: p.aResolver.filter((i) => i.estado === k) }));
 
-  const fs = 18;
-  const lh = 24;
+  const fs = 18.5;
+  const lh = 25;
   for (const g of grupos) {
     if (!g.items.length) continue;
     pildora(ctx, IM, y, g.p, g.label.toUpperCase(), 11.5, 1.4);
@@ -561,18 +527,18 @@ function pintarImagen(ctx, datos) {
       ctx.font = f(500, fs);
       const lineas = wrap(ctx, it.texto.trim(), an - 24 - wPrecio);
       if (g.tilde) tilde(ctx, IM + 1, y + 5, 12, PRIO.bien.dot);
-      else punto(ctx, IM + 6, y + 12, 4.5, g.porItem ? PRIO[it.estado].dot : g.p.dot);
-      lineas.forEach((l, i) => texto(ctx, l, IM + 24, y + 1 + i * lh, f(500, fs), g.apagado ? C.suave : C.tinta));
-      if (precio) texto(ctx, precio, IM + an, y + 1, f(700, fs), g.apagado ? C.suave : C.tinta, 'right');
+      else punto(ctx, IM + 6, y + 12.5, 4.5, g.porItem ? PRIO[it.estado].dot : g.p.dot);
+      lineas.forEach((l, i) => texto(ctx, l, IM + 24, y + 1 + i * lh, f(500, fs), g.apagado ? C.suave : C.texto));
+      if (precio) texto(ctx, precio, IM + an, y + 1, f(700, fs), g.apagado ? C.suave : C.texto, 'right');
       y += lineas.length * lh;
       if (idx < g.items.length - 1) {
-        y += 10;
+        y += 11;
         ctx.fillStyle = C.linea;
         ctx.fillRect(IM + 24, y, an - 24, 1);
-        y += 12;
+        y += 13;
       }
     });
-    y += 32;
+    y += 34;
   }
 
   const bloques = [];
@@ -612,17 +578,16 @@ function bytesDe(dataURL) {
 export const archivoPNG = (cv, nombre) =>
   new File([bytesDe(cv.toDataURL('image/png'))], nombre, { type: 'image/png' });
 
-// ---------- PDF: documento A4 (membrete, franja del auto, tabla, totales)
+// ---------- PDF: documento A4 oscuro (encabezado, tabla de fallas, totales)
 
 const A4 = { w: 595.28, h: 841.89 };
 const ESCALA = 3; // ~216 ppp: nítido en pantalla e impreso
 const M = 40;
-const PIE = 40;
+const PIE = 34;
 
 export function dibujarPDF(datos) {
   const { taller, logo, auto, cliente, diag } = datos;
   const p = preparar(datos);
-  const nombreTaller = taller?.nombre || 'Taller';
   const an = A4.w - 2 * M;
   const paginas = [];
   let ctx;
@@ -630,8 +595,8 @@ export function dibujarPDF(datos) {
 
   // Columnas de la tabla
   const colPrio = M + 14;
-  const colDet = M + 14 + 92;
-  const anchoImporte = p.precios ? 86 : 0;
+  const colDet = M + 14 + 96;
+  const anchoImporte = p.precios ? 90 : 0;
   const anchoEstado = p.trabajo ? 80 : 0;
   const finDet = A4.w - M - 14 - anchoImporte - anchoEstado - (anchoImporte || anchoEstado ? 12 : 0);
   const colEstado = A4.w - M - 14 - anchoImporte - anchoEstado;
@@ -642,7 +607,7 @@ export function dibujarPDF(datos) {
     cv.height = Math.round(A4.h * ESCALA);
     ctx = cv.getContext('2d');
     ctx.scale(ESCALA, ESCALA);
-    ctx.fillStyle = '#FFFFFF';
+    ctx.fillStyle = C.fondo;
     ctx.fillRect(0, 0, A4.w, A4.h);
     ctx.textBaseline = 'top';
     paginas.push(cv);
@@ -651,9 +616,8 @@ export function dibujarPDF(datos) {
 
   // Encabezado corto de las páginas siguientes
   function membreteCorto() {
-    texto(ctx, nombreTaller, M, y, f(800, 12), C.tinta);
-    texto(ctx, `${p.titulo} · continuación`, A4.w - M, y + 2, f(700, 8), C.suave, 'right', 1);
-    y += 20;
+    texto(ctx, `${p.titulo} · continuación`, M, y, f(700, 10), C.gris);
+    y += 18;
     ctx.fillStyle = C.linea;
     ctx.fillRect(M, y, an, 0.75);
     y += 16;
@@ -668,16 +632,16 @@ export function dibujarPDF(datos) {
   }
 
   function encabezadoTabla() {
-    rr(ctx, M, y, an, 28, 8);
+    rr(ctx, M, y, an, 30, 9);
     ctx.fillStyle = C.cabecera;
     ctx.fill();
-    const ly = y + 14.5;
+    const ly = y + 15.5;
     const E = (t, x, al = 'left') => texto(ctx, t, x, ly, f(800, 7.5), C.suave, al, 1.3, 'middle');
     E('PRIORIDAD', colPrio);
-    E('DETALLE', colDet);
+    E(p.trabajo ? 'TRABAJO' : 'FALLA DETECTADA', colDet);
     if (p.trabajo) E('ESTADO', colEstado);
     if (p.precios) E('IMPORTE', A4.w - M - 14, 'right');
-    y += 28;
+    y += 30;
   }
 
   function estadoTrabajo(it, x, cy) {
@@ -689,17 +653,18 @@ export function dibujarPDF(datos) {
   }
 
   function fila(it) {
-    ctx.font = f(500, 11);
+    ctx.font = f(500, 12);
     const lineas = wrap(ctx, it.texto.trim(), finDet - colDet);
-    const alto = Math.max(40, lineas.length * 14.5 + 25);
+    const lh = 15.5;
+    const alto = Math.max(44, lineas.length * lh + 27);
     if (asegurar(alto)) encabezadoTabla();
     const s = PRIO[it.estado];
-    pildora(ctx, colPrio, y + 10.5, s, s.label, 8.5);
+    pildora(ctx, colPrio, y + 12.5, s, s.label, 8.5);
     const apagado = p.trabajo && it.resultado === 'no';
-    lineas.forEach((l, i) => texto(ctx, l, colDet, y + 13 + i * 14.5, f(500, 11), apagado ? C.suave : C.tinta));
-    if (p.trabajo) estadoTrabajo(it, colEstado, y + 20);
+    lineas.forEach((l, i) => texto(ctx, l, colDet, y + 14 + i * lh, f(500, 12), apagado ? C.suave : C.texto));
+    if (p.trabajo) estadoTrabajo(it, colEstado, y + 22);
     if (p.precios && it.precio) {
-      texto(ctx, fmtPrecio(it.precio), A4.w - M - 14, y + 13, f(700, 11), apagado ? C.suave : C.tinta, 'right');
+      texto(ctx, fmtPrecio(it.precio), A4.w - M - 14, y + 14, f(700, 12), apagado ? C.suave : C.texto, 'right');
     }
     y += alto;
     ctx.fillStyle = C.linea;
@@ -708,7 +673,7 @@ export function dibujarPDF(datos) {
 
   // Abajo: a la izquierda lo revisado y la nota; a la derecha, los totales.
   function cierre() {
-    const anchoDer = p.precios ? 220 : 0;
+    const anchoDer = p.precios ? 230 : 0;
     const anchoIzq = anchoDer ? an - anchoDer - 26 : an;
     const izq = [];
     if (p.enBuenEstado.length) izq.push(bloqueBuenEstado(ctx, { ancho: anchoIzq, k: 1, items: p.enBuenEstado }));
@@ -719,8 +684,8 @@ export function dibujarPDF(datos) {
     const altoDer = der ? der.alto : 0;
     const junto = Math.max(altoIzq, altoDer);
     if (junto <= limite() - M - 60) {
-      asegurar(junto + 20);
-      y += 20;
+      asegurar(junto + 22);
+      y += 22;
       if (der) der.dibujar(A4.w - M - anchoDer, y);
       let ly = y;
       for (const b of izq) {
@@ -732,8 +697,8 @@ export function dibujarPDF(datos) {
     }
     // Nota muy larga: uno debajo del otro.
     if (der) {
-      asegurar(altoDer + 20);
-      y += 20;
+      asegurar(altoDer + 22);
+      y += 22;
       der.dibujar(A4.w - M - anchoDer, y);
       y += altoDer;
     }
@@ -745,27 +710,17 @@ export function dibujarPDF(datos) {
     }
   }
 
+  // Número de página, solo si hay más de una.
   function pies() {
+    if (paginas.length < 2) return;
     paginas.forEach((cv, i) => {
       ctx = cv.getContext('2d');
-      const py = A4.h - PIE + 6;
-      ctx.fillStyle = C.linea;
-      ctx.fillRect(M, py, an, 0.75);
-      const cy = py + 15;
-      let x = M;
-      if (taller?.telefono) {
-        glifoWA(ctx, M, cy - 5, 10);
-        x += 14;
-      }
-      texto(ctx, [nombreTaller, taller?.telefono].filter(Boolean).join(' · '), x, cy, f(500, 8.5), C.suave, 'left', 0, 'middle');
-      texto(ctx, `Página ${i + 1} de ${paginas.length}`, A4.w - M, cy, f(500, 8.5), C.suave, 'right', 0, 'middle');
+      texto(ctx, `Página ${i + 1} de ${paginas.length}`, A4.w - M, A4.h - PIE + 12, f(500, 8.5), C.suave, 'right', 0, 'middle');
     });
   }
 
   nuevaPagina();
-  y = membrete(ctx, { x: M, y, ancho: an, k: 1, taller, logo, titulo: p.titulo, fecha: p.fecha });
-  const yf = franja(ctx, { x: M, y, ancho: an, k: 1, apilado: false, auto, cliente, diag });
-  if (yf !== y) y = yf + 22;
+  y = encabezado(ctx, { x: M, y, ancho: an, k: 1, angosto: false, taller, logo, titulo: p.titulo, fecha: p.fecha, auto, cliente, diag });
   if (p.aResolver.length) {
     encabezadoTabla();
     p.aResolver.forEach(fila);
