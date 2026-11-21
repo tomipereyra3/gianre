@@ -6,7 +6,7 @@ const KEY = 'gianre:v1';
 export const ESTADOS = [
   ['urgente', 'Urgente'],
   ['pronto', 'Pronto'],
-  ['bien', 'Bien'],
+  ['bien', 'Buen estado'],
 ];
 export const ESTADO_LABEL = Object.fromEntries(ESTADOS);
 
@@ -17,7 +17,7 @@ export const SIGUIENTE = { pronto: 'urgente', urgente: 'bien', bien: 'pronto' };
 // Qué pasó con cada falla después del diagnóstico.
 export const RESULTADOS = [
   ['hecho', 'Hecho'],
-  ['despues', 'Después'],
+  ['despues', 'Para después'],
   ['no', 'No quiso'],
 ];
 export const RESULTADO_LABEL = Object.fromEntries(RESULTADOS);

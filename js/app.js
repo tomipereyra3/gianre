@@ -167,23 +167,24 @@ function pintarLateral(visible) {
     lateral = h(
       'aside',
       { class: 'lateral', 'aria-label': 'Menú' },
-      h('div', { class: 'lat-marca' }, marca('md'), 'Gianre'),
+      h('div', { class: 'lat-taller' }, h('small', null, 'Gianre'), h('b', { class: 'lat-nombre' })),
       h(
         'nav',
         { class: 'lat-nav' },
-        item('/', 'home', 'Inicio'),
-        item('/nuevo', 'add', 'Nuevo diagnóstico'),
-        item('/ajustes', 'tune', 'Ajustes'),
+        item('/', 'home', 'Vehículos'),
+        item('/nuevo', 'add', 'Crear diagnóstico'),
+        item('/ajustes', 'tune', 'Ajustes del taller'),
       ),
       h(
         'div',
         { class: 'lat-pie' },
         estadoNube(),
-        h('button', { class: 'btn btn-gris btn-sm block', type: 'button', onclick: vincularOtro }, icon('qr'), 'Vincular el celular'),
+        h('button', { class: 'btn btn-gris btn-sm block', type: 'button', onclick: vincularOtro }, icon('qr'), 'Conectar otro dispositivo'),
       ),
     );
     app.before(lateral);
   }
+  fill(lateral.querySelector('.lat-nombre'), S.db.taller?.nombre || '');
   const seccion = /^\/(nuevo|diag\/)/.test(rutaActual) ? '/nuevo' : rutaActual === '/ajustes' ? '/ajustes' : '/';
   for (const b of lateral.querySelectorAll('.lat-item')) {
     if (b.dataset.ruta === seccion) b.setAttribute('aria-current', 'page');
@@ -202,8 +203,6 @@ const hueco = () => h('span', { class: 'icon-btn hueco', 'aria-hidden': 'true' }
 const barTitulo = (t) => h('div', { class: 'bar-title' }, t);
 const cta = (label, onclick) =>
   h('div', { class: 'bottombar cta' }, h('button', { class: 'btn btn-primary', type: 'button', onclick }, icon('add'), label));
-const marca = (cls = '') =>
-  h('div', { class: `marca ${cls}`, 'aria-hidden': 'true' }, h('span', null, h('i'), h('i'), h('i')));
 const titulo = (t) => h('h2', { class: 'label' }, t);
 
 function sacudir(el) {
@@ -267,7 +266,7 @@ const identidad = (a, c, size = '') =>
 // Semáforo del auto: Urgente, Pronto o Al día.
 const LUZ = { urgente: 'Urgente', pronto: 'Pronto', bien: 'Al día' };
 function pillSemaforo(luz, cls = '') {
-  const faltan = luz.faltan === 1 ? 'Falta 1 trabajo' : `Faltan ${luz.faltan} trabajos`;
+  const faltan = luz.faltan === 1 ? '1 trabajo pendiente' : `${luz.faltan} trabajos pendientes`;
   return h(
     'span',
     { class: `pill ${cls}`, 'data-estado': luz.color, title: luz.color === 'bien' ? 'Al día' : faltan },
@@ -297,7 +296,7 @@ function filaAuto(a, c, cuando, onclick, cls = '') {
     queda || cobrado
       ? h('span', { class: 'auto-monto' }, S.fmtPrecio(queda || cobrado), h('small', null, queda ? ' pendiente' : ' cobrado'))
       : null,
-    n ? h('span', { class: 'auto-prog' }, trab.cuenta.hecho === n ? 'Todo hecho' : `${trab.cuenta.hecho} de ${n} hechos`) : null,
+    n ? h('span', { class: 'auto-prog' }, trab.cuenta.hecho === n ? 'Todos los trabajos hechos' : `${trab.cuenta.hecho} de ${n} trabajos hechos`) : null,
     h('span', { class: 'auto-go', 'aria-hidden': 'true' }, icon('arrow')),
   );
 }
@@ -332,29 +331,28 @@ function bienvenida() {
     h(
       'div',
       { class: 'bienvenida-body' },
-      marca(),
       h('span', { class: 'marca-nombre' }, 'Gianre'),
-      h('h1', null, '¿Cómo se llama tu taller?'),
-      h('p', { class: 'lead' }, 'Va a aparecer en cada presupuesto.'),
+      h('h1', null, 'Nombre del taller'),
+      h('p', { class: 'lead' }, 'Aparece arriba de cada presupuesto que enviás.'),
       nombre,
-      h('button', { class: 'btn btn-primary block', type: 'button', onclick: empezar }, 'Empezar', icon('flecha')),
-      h('button', { class: 'btn-text ya-uso', type: 'button', onclick: tengoCodigo }, 'Ya lo uso en otro dispositivo'),
+      h('button', { class: 'btn btn-primary block', type: 'button', onclick: empezar }, 'Guardar y continuar', icon('flecha')),
+      h('button', { class: 'btn-text ya-uso', type: 'button', onclick: tengoCodigo }, 'Ya uso Gianre en otro dispositivo'),
     ),
   );
 }
 
 // Pantallas de un solo mensaje (vinculando, listo): mismo formato que la bienvenida.
 const pantallaCentro = (...kids) =>
-  h('div', { class: 'screen bienvenida' }, h('div', { class: 'bienvenida-body' }, marca(), h('span', { class: 'marca-nombre' }, 'Gianre'), ...kids));
+  h('div', { class: 'screen bienvenida' }, h('div', { class: 'bienvenida-body' }, h('span', { class: 'marca-nombre' }, 'Gianre'), ...kids));
 
 // ---------- Compu y celular: vincular dispositivos
 
 const TEXTO_NUBE = {
-  ok: 'Guardado en la nube',
-  subiendo: 'Guardando…',
-  'sin-conexion': 'Sin señal: se guarda cuando vuelva',
-  error: 'No se pudo guardar en la nube. Se reintenta solo.',
-  apagado: 'Guardando…',
+  ok: 'Datos guardados en la nube',
+  subiendo: 'Guardando en la nube…',
+  'sin-conexion': 'Sin internet: se guarda cuando vuelva la señal',
+  error: 'Error al guardar en la nube. Reintentando…',
+  apagado: 'Guardando en la nube…',
 };
 function estadoNube(cls = '') {
   const el = h('p', { class: `nube ${cls}`, role: 'status' });
@@ -369,9 +367,9 @@ function estadoNube(cls = '') {
 
 let vinculandoAhora = null;
 function vinculando(codigo) {
-  const texto = h('p', { class: 'lead' }, 'Conectando con tu taller…');
+  const texto = h('p', { class: 'lead' }, 'Descargando los datos de tu taller…');
   // Si la pantalla se redibuja mientras conecta, no repetir el pedido.
-  if (vinculandoAhora === codigo) return pantallaCentro(h('h1', null, 'Vinculando'), texto);
+  if (vinculandoAhora === codigo) return pantallaCentro(h('h1', null, 'Conectando dispositivo'), texto);
   vinculandoAhora = codigo;
   Sync.vincular(codigo)
     .finally(() => (vinculandoAhora = null))
@@ -379,7 +377,7 @@ function vinculando(codigo) {
       if (enSafariDeIphone()) return listoEnSafari(codigo);
       history.replaceState({ depth: 0 }, '', '#/');
       render();
-      snack('Listo. Ya tenés los mismos datos.');
+      snack('Dispositivo conectado. Ya tenés los mismos datos.');
     })
     .catch(() => {
       fill(texto, 'El código venció o no es válido. Pedí uno nuevo en el otro dispositivo.');
@@ -389,7 +387,7 @@ function vinculando(codigo) {
       );
     });
   const acciones = h('div', { class: 'bienvenida-acciones' });
-  return pantallaCentro(h('h1', null, 'Vinculando'), texto, acciones);
+  return pantallaCentro(h('h1', null, 'Conectando dispositivo'), texto, acciones);
 }
 
 // iPhone: el QR abre Safari, que no comparte datos con la app de la pantalla de inicio.
@@ -404,8 +402,8 @@ function listoEnSafari(codigo) {
   pintarLateral(false);
   app.replaceChildren(
     pantallaCentro(
-      h('h1', null, 'Listo'),
-      h('p', { class: 'lead' }, '¿Tenés Gianre en la pantalla de inicio? Abrilo, tocá «Ya lo uso en otro dispositivo» y escribí:'),
+      h('h1', null, 'Dispositivo conectado'),
+      h('p', { class: 'lead' }, 'Si tenés Gianre en la pantalla de inicio, abrilo, tocá «Ya uso Gianre en otro dispositivo» y escribí este código:'),
       h('div', { class: 'codigo-grande' }, fmtCodigo(limpio)),
       limpio.length === 8 ? h('p', { class: 'hint' }, 'Vence en 15 minutos.') : null,
       h(
@@ -421,7 +419,7 @@ function listoEnSafari(codigo) {
               render();
             },
           },
-          'Seguir acá',
+          'Seguir en el navegador',
         ),
       ),
     ),
@@ -469,7 +467,7 @@ function verRecuperacion() {
         'button',
         { class: 'btn btn-wa block', type: 'button', onclick: () => mandarRecuperacion(codigo) },
         icon('wa'),
-        'Mandármelo por WhatsApp',
+        'Enviarme el código por WhatsApp',
       ),
       h(
         'button',
@@ -484,14 +482,14 @@ function verRecuperacion() {
                   S.save();
                 }
                 pintar(nuevo);
-                snack('Código nuevo. El anterior ya no sirve.');
+                snack('Código nuevo generado. El anterior ya no sirve.');
               })
               .catch(() => snack('Necesitás internet para cambiarlo')),
         },
-        'Cambiar código',
+        'Generar código nuevo',
       ),
     );
-  hoja('Código de recuperación', [cuerpo, h('button', { class: 'btn btn-ghost block', type: 'submit' }, 'Listo')], {
+  hoja('Código de recuperación', [cuerpo, h('button', { class: 'btn btn-ghost block', type: 'submit' }, 'Cerrar')], {
     onSubmit: () => cerrarCapa(),
   });
   Sync.pedirRecuperacion()
@@ -514,7 +512,7 @@ function avisoRecuperacion() {
     'div',
     { class: 'aviso' },
     h('b', null, 'Guardá tu código de recuperación'),
-    h('p', null, 'Si perdés el celular, con él recuperás todos los autos.'),
+    h('p', null, 'Si perdés el celular, con este código recuperás todos tus vehículos.'),
     h(
       'div',
       { class: 'aviso-acciones' },
@@ -531,7 +529,7 @@ function avisoRecuperacion() {
           },
         },
         icon('wa'),
-        'Mandármelo por WhatsApp',
+        'Enviarme el código por WhatsApp',
       ),
       h(
         'button',
@@ -545,7 +543,7 @@ function avisoRecuperacion() {
             el.remove();
           },
         },
-        'Ahora no',
+        'Recordarme después',
       ),
     ),
   );
@@ -562,11 +560,11 @@ function tengoCodigo() {
     enterkeyhint: 'go',
     'aria-label': 'Código',
   });
-  const boton = h('button', { class: 'btn btn-primary block', type: 'submit' }, 'Vincular');
+  const boton = h('button', { class: 'btn btn-primary block', type: 'submit' }, 'Conectar');
   hoja(
-    'Tengo un código',
+    'Ingresar código',
     [
-      h('p', { class: 'hint' }, 'El de 8 letras del otro dispositivo, o tu código de recuperación.'),
+      h('p', { class: 'hint' }, 'Escribí el código de 8 letras que aparece en el otro dispositivo, o tu código de recuperación.'),
       campo,
       boton,
     ],
@@ -576,19 +574,19 @@ function tengoCodigo() {
         const c = campo.value.replace(/[^a-z0-9]/gi, '');
         if (c.length !== 8 && c.length !== 16) return sacudir(campo);
         boton.disabled = true;
-        fill(boton, 'Vinculando…');
+        fill(boton, 'Conectando…');
         try {
           await Sync.vincular(c);
           cerrarCapa(() => {
             history.replaceState({ depth: 0 }, '', '#/');
             render();
-            snack('Listo. Ya tenés los mismos datos.');
+            snack('Dispositivo conectado. Ya tenés los mismos datos.');
           });
         } catch {
           boton.disabled = false;
-          fill(boton, 'Vincular');
+          fill(boton, 'Conectar');
           sacudir(campo);
-          snack(navigator.onLine === false ? 'Sin conexión. Probá con internet.' : 'Ese código venció o no es válido');
+          snack(navigator.onLine === false ? 'Sin internet. Conectate y probá de nuevo.' : 'Ese código venció o no es válido');
         }
       },
     },
@@ -618,14 +616,14 @@ function dibujarQR(qrcode, texto) {
   svg.setAttribute('viewBox', `-2 -2 ${n + 4} ${n + 4}`);
   svg.setAttribute('class', 'qr');
   svg.setAttribute('role', 'img');
-  svg.setAttribute('aria-label', 'Código QR para vincular');
+  svg.setAttribute('aria-label', 'Código QR para conectar otro dispositivo');
   svg.innerHTML = `<rect x="-2" y="-2" width="${n + 4}" height="${n + 4}" fill="#fff"/><path d="${d}" fill="#141414"/>`;
   return svg;
 }
 
 function vincularOtro() {
   const cuerpo = h('div', { class: 'vincular' }, h('p', { class: 'hint' }, 'Generando código…'));
-  hoja('Vincular otro dispositivo', [cuerpo, h('button', { class: 'btn btn-ghost block', type: 'submit' }, 'Listo')], {
+  hoja('Conectar otro dispositivo', [cuerpo, h('button', { class: 'btn btn-ghost block', type: 'submit' }, 'Cerrar')], {
     onSubmit: () => cerrarCapa(),
   });
   Promise.all([Sync.pedirCodigo(), cargarQR()])
@@ -634,14 +632,14 @@ function vincularOtro() {
       fill(
         cuerpo,
         dibujarQR(qrcode, link),
-        h('p', { class: 'vincular-paso' }, 'Escaneá con la cámara del celular'),
-        h('p', { class: 'hint' }, 'En una compu: Ajustes → Tengo un código'),
+        h('p', { class: 'vincular-paso' }, 'Escaneá este código con la cámara del otro celular'),
+        h('p', { class: 'hint' }, 'En una compu: Ajustes del taller → Ingresar código de conexión'),
         h('div', { class: 'codigo-grande' }, `${codigo.slice(0, 4)} ${codigo.slice(4)}`),
         h('p', { class: 'hint' }, 'Vence en 15 minutos.'),
       );
     })
     .catch(() =>
-      fill(cuerpo, h('p', { class: 'hint' }, 'Necesitás internet para vincular. Probá de nuevo cuando haya señal.')),
+      fill(cuerpo, h('p', { class: 'hint' }, 'Necesitás internet para conectar otro dispositivo. Probá cuando haya señal.')),
     );
 }
 
@@ -666,9 +664,9 @@ function inicio() {
     ? null
     : esperan
       ? esperan === 1
-        ? '1 auto espera trabajo'
-        : `${esperan} autos esperan trabajo`
-      : 'Todo al día';
+        ? '1 vehículo con trabajos pendientes'
+        : `${esperan} vehículos con trabajos pendientes`
+      : 'Todos los vehículos al día';
 
   const lista = h('div', { class: 'autos' });
   const dibujar = () => {
@@ -679,11 +677,11 @@ function inicio() {
     lista.replaceChildren(
       ...(res.length
         ? res.map(({ a, c, t }) => filaAuto(a, c, S.hace(t)))
-        : [h('p', { class: 'none' }, `Sin resultados para “${busqueda.trim()}”`)]),
+        : [h('p', { class: 'none' }, `No hay vehículos que coincidan con “${busqueda.trim()}”`)]),
     );
   };
 
-  const filtros = h('nav', { class: 'filtros', 'aria-label': 'Filtrar autos', hidden: colores < 2 });
+  const filtros = h('nav', { class: 'filtros', 'aria-label': 'Filtrar vehículos por estado', hidden: colores < 2 });
   const pintarFiltros = () =>
     fill(
       filtros,
@@ -724,11 +722,10 @@ function inicio() {
     h(
       'header',
       { class: 'home-head' },
-      h('span', { class: 'home-logo', 'aria-hidden': 'true' }, marca('sm')),
-      estadoNube(),
-      iconBtn('tune', 'Ajustes', () => go('/ajustes')),
+      h('div', { class: 'home-taller' }, h('b', null, t.nombre), estadoNube()),
+      iconBtn('tune', 'Ajustes del taller', () => go('/ajustes')),
     ),
-    h('div', { class: 'home-saludo' }, h('h1', null, `Hola, ${t.nombre}`), resumen ? h('p', null, resumen) : null),
+    h('div', { class: 'home-saludo' }, h('h1', null, 'Vehículos'), resumen ? h('p', null, resumen) : null),
     h(
       'div',
       { class: 'search' },
@@ -740,8 +737,8 @@ function inicio() {
             h('input', {
               type: 'search',
               value: busqueda,
-              placeholder: 'Buscar patente o cliente',
-              'aria-label': 'Buscar patente o cliente',
+              placeholder: 'Buscar patente, cliente o modelo',
+              'aria-label': 'Buscar patente, cliente o modelo',
               autocomplete: 'off',
               spellcheck: 'false',
               enterkeyhint: 'search',
@@ -752,13 +749,12 @@ function inicio() {
             }),
           )
         : null,
-      h('button', { class: 'btn btn-primary solo-compu', type: 'button', onclick: nuevoDiag }, icon('add'), 'Nuevo diagnóstico'),
+      h('button', { class: 'btn btn-primary solo-compu', type: 'button', onclick: nuevoDiag }, icon('add'), 'Crear diagnóstico'),
     ),
     avisoRecuperacion(),
     filtros,
-    autos.length ? h('div', { class: 'seccion' }, h('h2', null, 'Autos'), h('span', { class: 'solo-compu' }, 'Ordenado por urgencia')) : null,
     lista,
-    cta('Nuevo diagnóstico', nuevoDiag),
+    cta('Crear diagnóstico', nuevoDiag),
   );
 }
 
@@ -766,9 +762,8 @@ function vacioInicio() {
   return h(
     'div',
     { class: 'empty' },
-    marca('grande'),
-    h('h3', null, 'Todavía no hay autos'),
-    h('p', null, 'Se guardan solos cuando hacés un diagnóstico.'),
+    h('h3', null, 'Todavía no hay vehículos'),
+    h('p', null, 'Cada vehículo se guarda solo cuando creás su primer diagnóstico.'),
   );
 }
 
@@ -786,7 +781,7 @@ function nuevo() {
     autocorrect: 'off',
     spellcheck: 'false',
     enterkeyhint: 'go',
-    'aria-label': 'Patente o cliente',
+    'aria-label': 'Patente o nombre del cliente',
     oninput: (e) => {
       q = e.target.value;
       // La patente se acomoda sola: AD 482 KJ / ABC 123.
@@ -823,7 +818,7 @@ function nuevo() {
 
     fill(
       resultados,
-      !t && matches.length ? titulo('Recientes') : null,
+      !t && matches.length ? titulo('Vehículos recientes') : null,
       filas.length || nueva ? h('div', { class: 'autos' }, nuevoPrimero ? [nueva, filas] : [filas, nueva]) : null,
     );
   }
@@ -833,8 +828,8 @@ function nuevo() {
       'button',
       { class: 'auto nueva', type: 'button', onclick: crear },
       h('span', { class: 'auto-id' }, esPatente ? plate(qp) : avatar({ nombre: t })),
-      h('span', { class: 'auto-titulo' }, esPatente ? 'Auto nuevo' : mayusculas(t)),
-      h('span', { class: 'auto-sub' }, esPatente ? 'Empezar con esta patente' : 'Cliente nuevo'),
+      h('span', { class: 'auto-titulo' }, esPatente ? 'Agregar vehículo nuevo' : mayusculas(t)),
+      h('span', { class: 'auto-sub' }, esPatente ? 'Se crea con esta patente' : 'Agregar como cliente nuevo'),
       h('span', { class: 'auto-go', 'aria-hidden': 'true' }, icon('add')),
     );
   }
@@ -860,8 +855,13 @@ function nuevo() {
   return h(
     'div',
     { class: 'screen angosta' },
-    bar(iconBtn('close', 'Cerrar', () => volver('/')), barTitulo('Nuevo diagnóstico'), hueco()),
-    h('div', { class: 'nuevo-titulo' }, h('h1', null, '¿Qué auto entró?'), h('p', null, 'Patente o nombre del cliente')),
+    bar(iconBtn('close', 'Cerrar', () => volver('/')), barTitulo('Crear diagnóstico'), hueco()),
+    h(
+      'div',
+      { class: 'nuevo-titulo' },
+      h('h1', null, 'Seleccionar vehículo'),
+      h('p', null, 'Escribí la patente o el nombre del cliente. Si no está cargado, se agrega.'),
+    ),
     h(
       'label',
       { class: 'plate-input' },
@@ -901,12 +901,12 @@ function editor(id) {
   const filas = new Map();
 
   const nuevoItem = h('input', {
-    placeholder: 'Escribí una falla',
+    placeholder: 'Agregar falla detectada',
     list: 'dl-items',
     autocomplete: 'off',
     autocapitalize: 'sentences',
     enterkeyhint: 'enter',
-    'aria-label': 'Escribí una falla',
+    'aria-label': 'Agregar falla detectada',
     onblur: () => confirmar(),
     // Si pegan una lista (ej: copiada de WhatsApp), cada renglón es una falla.
     onpaste: (e) => {
@@ -946,7 +946,7 @@ function editor(id) {
         autocomplete: 'off',
         autocapitalize: 'sentences',
         enterkeyhint: 'done',
-        'aria-label': 'Falla',
+        'aria-label': 'Falla detectada',
         oninput: (e) => {
           it.texto = e.target.value.replace(/\n/g, ' ');
           guardar();
@@ -1018,13 +1018,13 @@ function editor(id) {
         {
           class: 'x',
           type: 'button',
-          'aria-label': 'Quitar',
+          'aria-label': 'Quitar falla',
           onclick: () =>
             it.texto.trim()
               ? confirmarBorrado({
-                  titulo: '¿Quitar esta falla?',
+                  titulo: 'Quitar falla',
                   texto: it.texto.trim(),
-                  boton: 'Quitar',
+                  boton: 'Quitar falla',
                   alConfirmar: () => quitar(it, true),
                 })
               : quitar(it, false),
@@ -1045,7 +1045,7 @@ function editor(id) {
     mostrarBanner();
     sumar();
     if (conDeshacer && it.texto.trim()) {
-      snack(`Se quitó “${it.texto.trim()}”`, 'Deshacer', () => {
+      snack(`Falla quitada: “${it.texto.trim()}”`, 'Deshacer', () => {
         if (!S.getDiag(d.id)) return;
         if (!d.items.some((x) => x.id === it.id)) d.items.splice(Math.min(i, d.items.length), 0, it);
         guardar();
@@ -1078,7 +1078,9 @@ function editor(id) {
               h(
                 'b',
                 null,
-                faltan.length === 1 ? '1 pendiente de la última visita' : `${faltan.length} pendientes de la última visita`,
+                faltan.length === 1
+                  ? '1 trabajo pendiente de la visita anterior'
+                  : `${faltan.length} trabajos pendientes de la visita anterior`,
               ),
               h('span', null, faltan.map((i) => i.texto.trim()).join(', ')),
             ),
@@ -1127,7 +1129,7 @@ function editor(id) {
     h('textarea', {
       class: 'input nota',
       rows: '2',
-      placeholder: 'Nota para el cliente',
+      placeholder: 'Nota para el cliente (sale en el presupuesto)',
       'aria-label': 'Nota para el cliente',
       value: d.nota || '',
       oninput: (e) => {
@@ -1173,8 +1175,9 @@ function editor(id) {
     // Si todavía no tiene nada, no hay nada que perder.
     if (S.vacio(d)) return borrar();
     confirmarBorrado({
-      titulo: '¿Eliminar este diagnóstico?',
+      titulo: 'Eliminar diagnóstico',
       texto: 'Se borra con todas sus fallas, en todos tus dispositivos.',
+      boton: 'Eliminar diagnóstico',
       alConfirmar: borrar,
     });
   }
@@ -1188,8 +1191,8 @@ function editor(id) {
     for (const el of totales) {
       fill(
         el,
-        h('span', null, 'Presupuesto'),
-        h('span', null, h('b', null, S.fmtPrecio(t)), h('small', null, vivos.length === 1 ? ' / 1 falla' : ` / ${vivos.length} fallas`)),
+        h('span', null, vivos.length === 1 ? 'Presupuesto · 1 falla' : `Presupuesto · ${vivos.length} fallas`),
+        h('b', null, S.fmtPrecio(t)),
       );
       el.hidden = !conPrecios || !t;
     }
@@ -1208,7 +1211,7 @@ function editor(id) {
         enCelu
           ? h(
               'button',
-              { class: 'btn-circulo btn-ojo', type: 'button', 'aria-label': 'Ver cómo queda', title: 'Ver cómo queda', onclick: () => verPrevia(d) },
+              { class: 'btn-circulo btn-ojo', type: 'button', 'aria-label': 'Ver cómo lo recibe el cliente', title: 'Ver cómo lo recibe el cliente', onclick: () => verPrevia(d) },
               icon('eye'),
             )
           : null,
@@ -1231,7 +1234,7 @@ function editor(id) {
     if (!esCompu.matches || !previaHojas.isConnected) return;
     pintarOpciones(previaOpciones, pintarPrevia);
     if (S.vacio(d))
-      return fill(previaHojas, h('p', { class: 'previa-vacia' }, 'Escribí la primera falla y acá ves cómo le llega al cliente.'));
+      return fill(previaHojas, h('p', { class: 'previa-vacia' }, 'Agregá la primera falla para ver cómo lo recibe el cliente.'));
     const datos = datosReporte(d);
     const hojas = formatoPrevia === 'pdf' ? dibujarPDF(datos) : [dibujarReporte(datos)];
     fill(
@@ -1275,7 +1278,7 @@ function editor(id) {
       },
     },
     icon('add'),
-    'Precios',
+    'Agregar precios',
   );
 
   // Diagnóstico nuevo: el teclado ya abierto, listo para escribir.
@@ -1297,7 +1300,7 @@ function editor(id) {
       h(
         'p',
         { class: 'editor-sub' },
-        h('span', null, [nombre ? c?.nombre : null, S.fmtFecha(d.fecha)].filter(Boolean).join(' · ')),
+        h('span', null, [`Diagnóstico del ${S.fmtFecha(d.fecha)}`, nombre ? c?.nombre : null].filter(Boolean).join(' · ')),
         marcaGuardado,
       ),
     ),
@@ -1314,14 +1317,14 @@ function editor(id) {
           lista,
           h('label', { class: 'add' }, h('span', { class: 'plus' }, icon('add')), nuevoItem),
         ),
-        h('div', { class: 'extras' }, btnPrecios, extra('Kilometraje', kmBox, km), extra('Nota', notaBox, nota)),
+        h('div', { class: 'extras' }, btnPrecios, extra('Agregar kilometraje', kmBox, km), extra('Agregar nota', notaBox, nota)),
         kmBox,
         notaBox,
       ),
       h(
         'aside',
         { class: 'previa', 'aria-label': 'Vista previa' },
-        h('div', { class: 'previa-head' }, h('h2', null, 'Así lo recibe el cliente'), previaOpciones),
+        h('div', { class: 'previa-head' }, h('h2', null, 'Vista previa para el cliente'), previaOpciones),
         previaHojas,
         tarjetaEnvio(false),
       ),
@@ -1374,7 +1377,7 @@ async function compartir(file, cliente) {
 // modo 'diagnostico': lo que hay que hacer. modo 'trabajo': lo que se hizo y lo que queda.
 function borradoEnOtro(d) {
   if (S.getDiag(d.id) && S.getAuto(d.autoId)) return false;
-  snack('Se borró en otro dispositivo');
+  snack('Este diagnóstico se eliminó en otro dispositivo');
   volver('/');
   return true;
 }
@@ -1382,7 +1385,7 @@ function borradoEnOtro(d) {
 function enviar(d, formato, modo = 'diagnostico') {
   document.activeElement?.blur?.();
   if (borradoEnOtro(d)) return;
-  if (S.vacio(d)) return snack('El diagnóstico está vacío');
+  if (S.vacio(d)) return snack('Agregá al menos una falla para poder enviarlo');
   // Todo sincrónico hasta share(): Safari exige que siga "dentro" del toque.
   const datos = datosReporte(d, modo);
   const nombre = nombreArchivo(d, formato, modo);
@@ -1397,10 +1400,10 @@ function enviar(d, formato, modo = 'diagnostico') {
     const aviso = () =>
       snack(
         r === 'compartido'
-          ? 'Enviado y guardado en el historial'
+          ? 'Enviado. Quedó guardado en el historial'
           : formato === 'pdf'
-            ? 'PDF descargado. Adjuntalo en el chat.'
-            : 'Imagen descargada. Adjuntala en el chat.',
+            ? 'PDF descargado. Adjuntalo en el chat del cliente.'
+            : 'Imagen descargada. Adjuntala en el chat del cliente.',
       );
     capa ? cerrarCapa(aviso) : aviso();
   });
@@ -1437,7 +1440,7 @@ function pintarOpciones(el, repintar) {
 function verPrevia(d) {
   document.activeElement?.blur?.();
   if (borradoEnOtro(d)) return;
-  if (S.vacio(d)) return snack('El diagnóstico está vacío');
+  if (S.vacio(d)) return snack('Agregá al menos una falla para poder enviarlo');
   const cuerpo = h('div', { class: 'viewer-body' });
   const opciones = h('div', { class: 'segmento', role: 'tablist', 'aria-label': 'Formato' });
   function pintar() {
@@ -1506,7 +1509,7 @@ function fichaAuto(id) {
   const stats = [
     km ? ['speed', 'Kilometraje', S.fmtKm(km), ''] : null,
     diags.length ? ['history', diags.length === 1 ? 'Visita' : 'Visitas', diags.length, ''] : null,
-    n ? ['done', 'Hechos', `${trab.cuenta.hecho} de ${n}`, trab.cuenta.hecho === n ? 'ok' : ''] : null,
+    n ? ['done', 'Trabajos hechos', `${trab.cuenta.hecho} de ${n}`, trab.cuenta.hecho === n ? 'ok' : ''] : null,
   ].filter(Boolean);
 
   const cliente = c
@@ -1517,7 +1520,7 @@ function fichaAuto(id) {
           'button',
           { class: 'cliente-info', type: 'button', onclick: () => go('/cliente/' + c.id) },
           h('small', null, 'Cliente'),
-          h('b', null, c.nombre || 'Sin nombre'),
+          h('b', null, c.nombre || 'Cliente sin nombre'),
           c.telefono ? h('span', null, c.telefono) : null,
         ),
         wa
@@ -1534,7 +1537,7 @@ function fichaAuto(id) {
               icon('wa'),
             )
           : null,
-        tel ? h('a', { class: 'btn-circulo chico', href: `tel:${tel}`, 'aria-label': 'Llamar', title: 'Llamar' }, icon('phone')) : null,
+        tel ? h('a', { class: 'btn-circulo chico', href: `tel:${tel}`, 'aria-label': 'Llamar al cliente', title: 'Llamar al cliente' }, icon('phone')) : null,
       )
     : h(
         'button',
@@ -1555,7 +1558,7 @@ function fichaAuto(id) {
           { class: 'envio-botones' },
           h(
             'button',
-            { class: 'btn-circulo', type: 'button', 'aria-label': 'Nuevo diagnóstico', title: 'Nuevo diagnóstico', onclick: nuevoDiag },
+            { class: 'btn-circulo', type: 'button', 'aria-label': 'Crear diagnóstico', title: 'Crear diagnóstico', onclick: nuevoDiag },
             icon('add'),
           ),
           h(
@@ -1569,13 +1572,13 @@ function fichaAuto(id) {
     : h(
         'div',
         { class: 'envio solo' },
-        h('div', { class: 'envio-botones' }, h('button', { class: 'btn btn-primary', type: 'button', onclick: nuevoDiag }, icon('add'), 'Nuevo diagnóstico')),
+        h('div', { class: 'envio-botones' }, h('button', { class: 'btn btn-primary', type: 'button', onclick: nuevoDiag }, icon('add'), 'Crear diagnóstico')),
       );
 
   return h(
     'div',
     { class: 'screen ficha' },
-    bar(backBtn('/'), barTitulo('Ficha del auto'), iconBtn('edit', 'Editar auto', () => editarAuto(a))),
+    bar(backBtn('/'), barTitulo('Ficha del vehículo'), iconBtn('edit', 'Editar vehículo', () => editarAuto(a))),
     h(
       'div',
       { class: 'ficha-cols' },
@@ -1587,14 +1590,14 @@ function fichaAuto(id) {
           { class: 'hero-auto', 'data-estado': luz?.color },
           a.patente
             ? plate(a.patente, 'lg')
-            : h('button', { class: 'plate-falta', type: 'button', onclick: () => editarAuto(a) }, '+ Patente'),
+            : h('button', { class: 'plate-falta', type: 'button', onclick: () => editarAuto(a) }, 'Agregar patente'),
         ),
         h(
           'div',
           { class: 'hero-linea' },
           nombre
             ? h('h1', null, nombre)
-            : h('button', { class: 'h1-falta', type: 'button', onclick: () => editarAuto(a) }, '+ Marca y modelo'),
+            : h('button', { class: 'h1-falta', type: 'button', onclick: () => editarAuto(a) }, 'Agregar marca y modelo'),
           luz ? pillSemaforo(luz, 'grande') : null,
         ),
         stats.length
@@ -1613,9 +1616,9 @@ function fichaAuto(id) {
         { class: 'ficha-der' },
         // Checklist punto por punto, rojo primero. Cada falla termina en
         // Hecho, Después (queda para otra visita) o No quiso (el cliente no lo hizo).
-        n ? [titulo('Trabajos'), h('div', { class: 'trabajos' }, trab.items.map(filaTrabajo))] : null,
+        n ? [titulo('Trabajos del último diagnóstico'), h('div', { class: 'trabajos' }, trab.items.map(filaTrabajo))] : null,
         titulo('Historial clínico'),
-        diags.length ? h('div', { class: 'card' }, diags.map(filaHistorial)) : h('p', { class: 'none' }, 'Sin diagnósticos todavía'),
+        diags.length ? h('div', { class: 'card' }, diags.map(filaHistorial)) : h('p', { class: 'none' }, 'Todavía no hay diagnósticos'),
       ),
     ),
     h('div', { class: 'bottombar' }, abajo),
@@ -1653,7 +1656,7 @@ function filaTrabajo(it) {
     ),
     h(
       'div',
-      { class: 'resultados', role: 'group', 'aria-label': `Qué pasó con ${it.texto.trim()}` },
+      { class: 'resultados', role: 'group', 'aria-label': `Estado del trabajo: ${it.texto.trim()}` },
       S.RESULTADOS.map(([r, label]) =>
         h(
           'button',
@@ -1679,8 +1682,8 @@ function totalesTrabajo(items) {
   return h(
     'div',
     { class: 'envio-total' },
-    h('span', { class: 'hecho' }, 'Hecho ', h('b', null, S.fmtPrecio(hechos))),
-    h('span', { class: 'queda' }, 'Queda ', h('b', null, S.fmtPrecio(quedan))),
+    h('span', { class: 'hecho' }, 'Hecho: ', h('b', null, S.fmtPrecio(hechos))),
+    h('span', { class: 'queda' }, 'Pendiente: ', h('b', null, S.fmtPrecio(quedan))),
   );
 }
 
@@ -1710,7 +1713,7 @@ function filaHistorial(d) {
         'span',
         { class: 'row-title' },
         S.fmtFecha(d.fecha, true),
-        d.enviado ? null : h('span', { class: 'tag' }, 'Sin enviar'),
+        d.enviado ? null : h('span', { class: 'tag' }, 'No enviado'),
       ),
       h(
         'span',
@@ -1733,7 +1736,7 @@ function editarAuto(a) {
   const mod = input({ value: a.modelo, autocapitalize: 'words', placeholder: 'Ej: Fiat Cronos' });
   const an = input({ value: a.anio, inputmode: 'numeric', maxlength: '4' });
   hoja(
-    'Editar auto',
+    'Editar vehículo',
     [
       h(
         'div',
@@ -1741,11 +1744,11 @@ function editarAuto(a) {
         field('Patente', pat),
         h('div', { class: 'fields-row' }, field('Marca y modelo', mod), field('Año', an, 'w-anio')),
       ),
-      h('button', { class: 'btn btn-primary block', type: 'submit' }, 'Guardar'),
+      h('button', { class: 'btn btn-primary block', type: 'submit' }, 'Guardar cambios'),
       h(
         'button',
         { class: 'btn-text danger', type: 'button', onclick: () => cerrarCapa(() => borrarAutoUI(a)) },
-        'Eliminar auto',
+        'Eliminar vehículo',
       ),
     ],
     {
@@ -1753,7 +1756,7 @@ function editarAuto(a) {
         const p = S.normPatente(pat.value);
         if (p && S.db.autos.some((x) => x.patente === p && x.id !== a.id)) {
           sacudir(pat);
-          return snack('Ya hay un auto con esa patente');
+          return snack('Ya hay un vehículo con esa patente');
         }
         a.patente = p;
         a.modelo = mod.value.trim();
@@ -1767,13 +1770,14 @@ function editarAuto(a) {
 
 function borrarAutoUI(a) {
   confirmarBorrado({
-    titulo: '¿Eliminar este auto?',
+    titulo: 'Eliminar vehículo',
     texto: 'Se borra con todo su historial, en todos tus dispositivos.',
+    boton: 'Eliminar vehículo',
     alConfirmar: () => {
       const deshacer = S.borrarAuto(a.id);
       S.save();
       volver('/');
-      snack('Auto eliminado', 'Deshacer', () => {
+      snack('Vehículo eliminado', 'Deshacer', () => {
         deshacer();
         refrescar();
       });
@@ -1783,14 +1787,14 @@ function borrarAutoUI(a) {
 
 function asignarCliente(a) {
   refrescarListas();
-  const nom = input({ placeholder: 'Nombre', autocapitalize: 'words', list: 'dl-clientes' });
+  const nom = input({ placeholder: 'Ej: Martín Gómez', autocapitalize: 'words', list: 'dl-clientes' });
   const tel = input({ type: 'tel', inputmode: 'tel', placeholder: 'Ej: 11 2345 6789' });
   completarTelefono(nom, tel);
   hoja(
-    'Cliente',
+    'Agregar cliente',
     [
-      h('div', { class: 'fields' }, field('Nombre', nom), field('WhatsApp', tel)),
-      h('button', { class: 'btn btn-primary block', type: 'submit' }, 'Guardar'),
+      h('div', { class: 'fields' }, field('Nombre y apellido', nom), field('Número de WhatsApp', tel)),
+      h('button', { class: 'btn btn-primary block', type: 'submit' }, 'Guardar cliente'),
     ],
     {
       foco: true,
@@ -1818,12 +1822,12 @@ function fichaCliente(id) {
   return h(
     'div',
     { class: 'screen ficha-cliente' },
-    bar(backBtn('/'), barTitulo('Cliente'), iconBtn('edit', 'Editar cliente', () => editarCliente(c))),
+    bar(backBtn('/'), barTitulo('Ficha del cliente'), iconBtn('edit', 'Editar cliente', () => editarCliente(c))),
     h(
       'section',
       { class: 'hero' },
       avatar(c, 'lg'),
-      h('h1', null, c.nombre || 'Sin nombre'),
+      h('h1', null, c.nombre || 'Cliente sin nombre'),
       c.telefono ? h('p', null, c.telefono) : null,
       tel
         ? h(
@@ -1834,14 +1838,14 @@ function fichaCliente(id) {
                   'a',
                   { class: 'btn btn-wa', href: `https://wa.me/${wa}`, target: '_blank', rel: 'noopener' },
                   icon('wa'),
-                  'WhatsApp',
+                  'Abrir WhatsApp',
                 )
               : null,
-            h('a', { class: 'btn btn-gris', href: `tel:${tel}` }, icon('phone'), 'Llamar'),
+            h('a', { class: 'btn btn-gris', href: `tel:${tel}` }, icon('phone'), 'Llamar al cliente'),
           )
         : null,
     ),
-    titulo(autos.length === 1 ? 'Auto' : 'Autos'),
+    titulo('Vehículos del cliente'),
     h(
       'div',
       { class: 'autos' },
@@ -1850,7 +1854,7 @@ function fichaCliente(id) {
         'button',
         { class: 'auto nueva', type: 'button', onclick: () => agregarAuto(c) },
         h('span', { class: 'auto-id' }, h('span', { class: 'avatar mas' }, icon('add'))),
-        h('span', { class: 'auto-titulo' }, 'Agregar auto'),
+        h('span', { class: 'auto-titulo' }, 'Agregar vehículo'),
       ),
     ),
   );
@@ -1861,7 +1865,7 @@ function agregarAuto(c) {
   const mod = input({ autocapitalize: 'words', placeholder: 'Ej: Fiat Cronos' });
   const an = input({ inputmode: 'numeric', maxlength: '4' });
   hoja(
-    'Agregar auto',
+    'Agregar vehículo',
     [
       h(
         'div',
@@ -1869,7 +1873,7 @@ function agregarAuto(c) {
         field('Patente', pat),
         h('div', { class: 'fields-row' }, field('Marca y modelo', mod), field('Año', an, 'w-anio')),
       ),
-      h('button', { class: 'btn btn-primary block', type: 'submit' }, 'Guardar'),
+      h('button', { class: 'btn btn-primary block', type: 'submit' }, 'Guardar vehículo'),
     ],
     {
       foco: true,
@@ -1892,8 +1896,8 @@ function editarCliente(c) {
   hoja(
     'Editar cliente',
     [
-      h('div', { class: 'fields' }, field('Nombre', nom), field('WhatsApp', tel)),
-      h('button', { class: 'btn btn-primary block', type: 'submit' }, 'Guardar'),
+      h('div', { class: 'fields' }, field('Nombre y apellido', nom), field('Número de WhatsApp', tel)),
+      h('button', { class: 'btn btn-primary block', type: 'submit' }, 'Guardar cambios'),
       h(
         'button',
         {
@@ -1902,8 +1906,9 @@ function editarCliente(c) {
           onclick: () =>
             cerrarCapa(() =>
               confirmarBorrado({
-                titulo: '¿Eliminar este cliente?',
-                texto: 'Sus autos y su historial quedan guardados.',
+                titulo: 'Eliminar cliente',
+                texto: 'Sus vehículos y su historial quedan guardados.',
+                boton: 'Eliminar cliente',
                 alConfirmar: () => {
                   const deshacer = S.borrarCliente(c.id);
                   S.save();
@@ -1969,7 +1974,7 @@ function elegirLogo(luego) {
         S.save();
         await cargarLogo();
         luego?.();
-        snack('Logo guardado. Ya sale en los diagnósticos.');
+        snack('Logo guardado. Ya aparece en los presupuestos.');
       } catch {
         snack('No se pudo usar esa imagen');
       }
@@ -2009,25 +2014,25 @@ function ajustes() {
   return h(
     'div',
     { class: 'screen angosta' },
-    bar(backBtn('/'), barTitulo('Ajustes'), hueco()),
-    titulo('Taller'),
+    bar(backBtn('/'), barTitulo('Ajustes del taller'), hueco()),
+    titulo('Datos del taller'),
     h(
       'div',
       { class: 'pad logo-bloque' },
       h(
         'button',
         { class: `logo-zona${t.logo ? ' con-logo' : ''}`, type: 'button', onclick: () => elegirLogo(refrescar) },
-        t.logo ? h('img', { src: t.logo, alt: 'Logo del taller' }) : [icon('image'), h('span', null, 'Agregar el logo del taller')],
+        t.logo ? h('img', { src: t.logo, alt: 'Logo del taller' }) : [icon('image'), h('span', null, 'Subir el logo del taller')],
       ),
       h(
         'div',
         { class: 'logo-pie' },
-        h('span', null, 'Sale en los diagnósticos, presupuestos y PDF.'),
+        h('span', null, 'Aparece en los presupuestos, diagnósticos y PDF.'),
         t.logo
           ? h(
               'span',
               { class: 'logo-botones' },
-              h('button', { class: 'btn-text', type: 'button', onclick: () => elegirLogo(refrescar) }, 'Cambiar'),
+              h('button', { class: 'btn-text', type: 'button', onclick: () => elegirLogo(refrescar) }, 'Cambiar logo'),
               h(
                 'button',
                 {
@@ -2040,14 +2045,14 @@ function ajustes() {
                     refrescar();
                   },
                 },
-                'Quitar',
+                'Quitar logo',
               ),
             )
           : null,
       ),
     ),
-    h('div', { class: 'fields pad' }, field('Nombre', nombre), field('WhatsApp', tel), field('Dirección', dir)),
-    titulo('Compu y celular'),
+    h('div', { class: 'fields pad' }, field('Nombre del taller', nombre), field('WhatsApp del taller', tel), field('Dirección', dir)),
+    titulo('Usar en otros dispositivos'),
     estadoNube('pad'),
     h(
       'div',
@@ -2056,14 +2061,14 @@ function ajustes() {
         'button',
         { class: 'row', type: 'button', onclick: vincularOtro },
         h('span', { class: 'avatar mas' }, icon('qr')),
-        h('span', { class: 'row-main' }, h('span', { class: 'row-title' }, 'Vincular otro dispositivo')),
+        h('span', { class: 'row-main' }, h('span', { class: 'row-title' }, 'Conectar otro dispositivo'), h('span', { class: 'row-sub' }, 'Muestra un código QR para escanear')),
         h('span', { class: 'go' }, icon('chevron')),
       ),
       h(
         'button',
         { class: 'row', type: 'button', onclick: tengoCodigo },
         h('span', { class: 'avatar mas' }, icon('teclado')),
-        h('span', { class: 'row-main' }, h('span', { class: 'row-title' }, 'Tengo un código')),
+        h('span', { class: 'row-main' }, h('span', { class: 'row-title' }, 'Ingresar código de conexión'), h('span', { class: 'row-sub' }, 'Para usar los datos de otro dispositivo')),
         h('span', { class: 'go' }, icon('chevron')),
       ),
       h(
@@ -2074,7 +2079,7 @@ function ajustes() {
           'span',
           { class: 'row-main' },
           h('span', { class: 'row-title' }, 'Código de recuperación'),
-          S.db.taller?.recuperacionGuardada ? null : h('span', { class: 'row-sub' }, 'Todavía no lo guardaste'),
+          h('span', { class: 'row-sub' }, S.db.taller?.recuperacionGuardada ? 'Para recuperar todo si perdés el celular' : 'Todavía no lo guardaste'),
         ),
         h('span', { class: 'go' }, icon('chevron')),
       ),
@@ -2083,7 +2088,7 @@ function ajustes() {
     h(
       'div',
       { class: 'acciones pad' },
-      h('button', { class: 'btn btn-ghost', type: 'button', onclick: exportar }, icon('download'), 'Descargar copia'),
+      h('button', { class: 'btn btn-ghost', type: 'button', onclick: exportar }, icon('download'), 'Descargar copia de los datos'),
     ),
   );
 }

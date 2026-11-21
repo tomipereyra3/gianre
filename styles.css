@@ -269,74 +269,6 @@ textarea:focus-visible {
   box-shadow: none;
 }
 
-/* ---------- Marca: una patente con los tres colores del semáforo */
-
-.marca {
-  width: 56px;
-  height: 40px;
-  border-radius: 8px;
-  background: #fff;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  flex: none;
-}
-
-.marca::before {
-  content: '';
-  height: 9px;
-  background: var(--mercosur);
-}
-
-.marca span {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-}
-
-.marca i {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--urgente);
-}
-
-.marca i:nth-child(2) { background: var(--pronto); }
-.marca i:nth-child(3) { background: var(--bien); }
-
-.marca.sm {
-  width: 26px;
-  height: 18px;
-  border-radius: 4px;
-}
-
-.marca.sm::before { height: 4px; }
-.marca.sm span { gap: 2px; }
-.marca.sm i { width: 4px; height: 4px; }
-
-.marca.md {
-  width: 40px;
-  height: 28px;
-  border-radius: 6px;
-}
-
-.marca.md::before { height: 6px; }
-.marca.md span { gap: 3px; }
-.marca.md i { width: 6px; height: 6px; }
-
-.marca.grande {
-  width: 76px;
-  height: 54px;
-  border-radius: 11px;
-  margin: 0 auto;
-}
-
-.marca.grande::before { height: 12px; }
-.marca.grande span { gap: 7px; }
-.marca.grande i { width: 11px; height: 11px; }
-
 /* ---------- Patente argentina */
 
 .plate {
@@ -650,6 +582,10 @@ textarea:focus-visible {
   color: var(--muted);
 }
 
+.envio-total > * {
+  white-space: nowrap;
+}
+
 .envio-total b {
   font-size: 24px;
   font-weight: 600;
@@ -791,14 +727,13 @@ input::-webkit-calendar-picker-indicator {
 }
 
 .marca-nombre {
-  margin-top: 12px;
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 700;
   letter-spacing: -0.01em;
 }
 
 .bienvenida h1 {
-  margin-top: 44px;
+  margin-top: 40px;
   font-size: 30px;
   font-weight: 600;
   line-height: 1.15;
@@ -848,15 +783,30 @@ input::-webkit-calendar-picker-indicator {
   padding: calc(22px + env(safe-area-inset-top)) 20px 0;
 }
 
-.home-logo {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  flex: none;
-  background: var(--surface);
-  box-shadow: inset 0 0 0 1px var(--line);
+.home-taller {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.home-taller b {
+  font-size: 17px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.home-taller .nube {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.home-taller .nube .icon {
+  width: 16px;
+  height: 16px;
 }
 
 .home-saludo {
@@ -1016,7 +966,7 @@ input::-webkit-calendar-picker-indicator {
 .empty h3 {
   font-size: 20px;
   font-weight: 600;
-  margin: 28px 0 6px;
+  margin: 0 0 6px;
 }
 
 .empty p {
@@ -1583,7 +1533,7 @@ input::-webkit-calendar-picker-indicator {
   justify-content: center;
   gap: 6px;
   flex: none;
-  width: 92px;
+  width: 110px;
   height: 32px;
   margin-top: 12px;
   border-radius: 16px;
@@ -1660,7 +1610,7 @@ input::-webkit-calendar-picker-indicator {
 }
 
 .add .plus {
-  width: 92px;
+  width: 110px;
   display: grid;
   place-items: center;
   flex: none;
@@ -2474,14 +2424,27 @@ input::-webkit-calendar-picker-indicator {
     box-shadow: 1px 0 0 rgba(255, 255, 255, 0.06);
   }
 
-  .lat-marca {
+  .lat-taller {
     display: flex;
-    align-items: center;
-    gap: 12px;
+    flex-direction: column;
+    gap: 4px;
     padding: 0 8px;
-    font-size: 22px;
+    min-width: 0;
+  }
+
+  .lat-taller small {
+    font-size: 13px;
     font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+  }
+
+  .lat-nombre {
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1.2;
     letter-spacing: -0.01em;
+    overflow-wrap: anywhere;
   }
 
   .lat-nav {

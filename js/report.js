@@ -31,7 +31,7 @@ const C = {
 const PRIO = {
   urgente: { label: 'Urgente', dot: '#D7362B', bg: '#FBE7E5', text: '#B4261C' },
   pronto: { label: 'Pronto', dot: '#E8890C', bg: '#FDEEDB', text: '#9A5400' },
-  bien: { label: 'Bien', dot: '#23864A', bg: '#E3F2E8', text: '#1B6B3A' },
+  bien: { label: 'Buen estado', dot: '#23864A', bg: '#E3F2E8', text: '#1B6B3A' },
 };
 const NO_SE_HIZO = { dot: '#A19D94', bg: '#EFEEE9', text: '#57534B' };
 
@@ -501,7 +501,7 @@ function bloqueNota(ctx, { ancho: an, k, nota }) {
       rr(ctx, x, y, an, this.alto, 12 * k);
       ctx.fillStyle = C.papel;
       ctx.fill();
-      texto(ctx, 'NOTA', x + pad, y + pad, f(800, 7.5 * k), C.suave, 'left', 1.3 * k);
+      texto(ctx, 'NOTA DEL TALLER', x + pad, y + pad, f(800, 7.5 * k), C.suave, 'left', 1.3 * k);
       lineas.forEach((l, i) => texto(ctx, l, x + pad, y + pad + 15.5 * k + i * lh, f(500, 11 * k), C.tinta));
     },
   };
