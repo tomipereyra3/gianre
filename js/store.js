@@ -364,6 +364,56 @@ export function fmtPatente(p) {
 // Patentes viejas (ABC 123): fondo negro. Mercosur: blanca con franja azul.
 export const esPatenteVieja = (p) => /^[A-Z]{3}\d{3}$/.test(normPatente(p));
 
+// ---------- Año aproximado según la patente
+// Las patentes se entregan en orden, así que las letras dicen más o menos cuándo se patentó
+// el vehículo (no siempre es el año de fabricación). No hay tabla oficial: son relevamientos
+// de prensa (iProfesional, 2026), por eso se muestra como aproximado.
+
+const letra = (c) => c.charCodeAt(0) - 65;
+
+// Formato anterior (ABC 123): las dos primeras letras en enero de cada año.
+const VIEJAS = [
+  [1995, 'AA'], [1996, 'AP'], [1997, 'BD'], [1998, 'BU'], [1999, 'CM'], [2000, 'DC'],
+  [2001, 'DO'], [2002, 'DX'], [2003, 'ED'], [2004, 'EI'], [2005, 'ET'], [2006, 'FI'],
+  [2007, 'GB'], [2008, 'GV'], [2009, 'HT'], [2010, 'IM'], [2011, 'JN'], [2012, 'KU'],
+  [2013, 'MB'], [2014, 'NM'], [2015, 'ON'], [2016, 'PM'],
+];
+
+// Mercosur (AB 123 CD): [año, mes, serie y número]. Dentro de una serie avanzan los números.
+const MERCOSUR = [
+  [2016, 4, 'AA000'], [2017, 1, 'AA900'], [2017, 2, 'AB000'], [2017, 11, 'AC000'],
+  [2018, 1, 'AC200'], [2018, 7, 'AD000'], [2019, 1, 'AD400'], [2019, 10, 'AE000'],
+  [2020, 1, 'AE100'], [2021, 1, 'AE600'], [2021, 8, 'AF000'], [2022, 10, 'AF600'],
+  [2023, 1, 'AF770'], [2023, 7, 'AG000'], [2024, 12, 'AH000'], [2025, 12, 'AI000'],
+];
+const posMercosur = (s) => (letra(s[0]) * 26 + letra(s[1])) * 1000 + Number(s.slice(2, 5));
+
+export function anioPorPatente(patente) {
+  const p = normPatente(patente);
+  const hoy = new Date().getFullYear();
+  if (/^[A-Z]{3}\d{3}$/.test(p)) {
+    // De la Q en adelante no se usaron en ese orden: mejor no adivinar.
+    if (p[0] > 'P') return null;
+    const pos = letra(p[0]) * 26 + letra(p[1]);
+    let anio = null;
+    for (const [a, l] of VIEJAS) if (letra(l[0]) * 26 + letra(l[1]) <= pos) anio = a;
+    return anio;
+  }
+  if (!/^[A-Z]{2}\d{3}[A-Z]{2}$/.test(p)) return null;
+  const x = posMercosur(p);
+  const mes = (a, m) => a * 12 + m - 1;
+  let i = -1;
+  while (i + 1 < MERCOSUR.length && posMercosur(MERCOSUR[i + 1][2]) <= x) i++;
+  if (i < 0) return null;
+  const [a, m, s] = MERCOSUR[i];
+  const sig = MERCOSUR[i + 1];
+  // Entre dos referencias se reparte en proporción; después de la última, una serie por año.
+  const meses = sig
+    ? ((x - posMercosur(s)) / (posMercosur(sig[2]) - posMercosur(s))) * (mes(sig[0], sig[1]) - mes(a, m))
+    : ((x - posMercosur(s)) / 1000) * 12;
+  return Math.min(hoy, Math.floor((mes(a, m) + meses) / 12));
+}
+
 export const fmtKm = (n) => (n ? Number(n).toLocaleString('es-AR') : '');
 
 const pad = (n) => String(n).padStart(2, '0');

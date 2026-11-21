@@ -1,5 +1,5 @@
 // Funciona sin señal: primero la red, si no hay, lo guardado.
-const CACHE = 'gianre-v10';
+const CACHE = 'gianre-v11';
 const BASE = [
   './',
   './index.html',

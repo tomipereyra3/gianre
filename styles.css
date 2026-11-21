@@ -1802,6 +1802,23 @@ input::-webkit-calendar-picker-indicator {
   overflow-wrap: anywhere;
 }
 
+.hero-anio {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  padding: 6px 20px 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.hero-anio .btn-text {
+  height: 32px;
+  padding: 0 10px;
+  font-size: 14px;
+  color: var(--accent);
+}
+
 .h1-falta {
   font-size: 18px;
   font-weight: 600;

@@ -1499,6 +1499,8 @@ function fichaAuto(id) {
   const tel = (c?.telefono || '').replace(/[^\d+]/g, '');
   const nombre = S.nombreAuto(a);
   const n = trab.items.length;
+  // Si no cargaron el año, se estima por la patente (con un toque se confirma).
+  const anioAprox = !a.anio && a.patente ? S.anioPorPatente(a.patente) : null;
 
   const nuevoDiag = () => {
     const d = S.nuevoDiag(a.id);
@@ -1600,6 +1602,27 @@ function fichaAuto(id) {
             : h('button', { class: 'h1-falta', type: 'button', onclick: () => editarAuto(a) }, 'Agregar marca y modelo'),
           luz ? pillSemaforo(luz, 'grande') : null,
         ),
+        anioAprox
+          ? h(
+              'p',
+              { class: 'hero-anio' },
+              `Año aproximado: ${anioAprox}, según la patente`,
+              h(
+                'button',
+                {
+                  class: 'btn-text',
+                  type: 'button',
+                  onclick: () => {
+                    a.anio = String(anioAprox);
+                    S.save();
+                    refrescar();
+                    snack(`Año ${anioAprox} guardado`);
+                  },
+                },
+                'Confirmar año',
+              ),
+            )
+          : null,
         stats.length
           ? h(
               'div',
@@ -1731,10 +1754,22 @@ function filaHistorial(d) {
   );
 }
 
+// En el campo Año se sugiere el que corresponde a la patente (se ve como ejemplo, no se guarda solo).
+function sugerirAnio(pat, an) {
+  const poner = () => {
+    const x = S.anioPorPatente(pat.value);
+    an.placeholder = x ? `≈ ${x}` : '';
+    an.title = x ? `Según la patente, aproximadamente ${x}` : '';
+  };
+  pat.addEventListener('input', poner);
+  poner();
+}
+
 function editarAuto(a) {
   const pat = input({ value: S.fmtPatente(a.patente), autocapitalize: 'characters', maxlength: '10' });
   const mod = input({ value: a.modelo, autocapitalize: 'words', placeholder: 'Ej: Fiat Cronos' });
   const an = input({ value: a.anio, inputmode: 'numeric', maxlength: '4' });
+  sugerirAnio(pat, an);
   hoja(
     'Editar vehículo',
     [
@@ -1864,6 +1899,7 @@ function agregarAuto(c) {
   const pat = input({ autocapitalize: 'characters', maxlength: '10', placeholder: 'Ej: AB 123 CD' });
   const mod = input({ autocapitalize: 'words', placeholder: 'Ej: Fiat Cronos' });
   const an = input({ inputmode: 'numeric', maxlength: '4' });
+  sugerirAnio(pat, an);
   hoja(
     'Agregar vehículo',
     [
