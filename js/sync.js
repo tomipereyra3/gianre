@@ -120,10 +120,9 @@ export async function pedirRecuperacion(renovar = false) {
   return codigo;
 }
 
-// Este dispositivo pasa a usar los datos del taller del código.
+// Este dispositivo pasa a usar los datos de otro taller (por código o por email).
 // Lo que ya tenía cargado se suma; el nombre y logo del taller vienen del otro.
-export async function vincular(codigo) {
-  const clave = await rpc('gianre_vincular', { p_codigo: codigo });
+async function usarClave(clave, recuperacion = null) {
   generacion++;
   while (enCurso) {
     try {
@@ -132,11 +131,54 @@ export async function vincular(codigo) {
   }
   S.sync.clave = clave;
   S.sync.version = 0;
-  // Si entró con el código de recuperación, ese ya es el código del taller.
-  const limpio = codigo.replace(/[^a-z0-9]/gi, '').toUpperCase();
-  S.sync.recuperacion = limpio.length === 16 ? limpio : null;
+  S.sync.recuperacion = recuperacion;
   if (S.db.taller) S.db.taller.act = 0;
   S.marcarTodo({ menosTaller: true });
   await sincronizar();
   if (estado !== 'ok' && estado !== 'subiendo') throw new Error('no sincronizó');
+}
+
+export async function vincular(codigo) {
+  const clave = await rpc('gianre_vincular', { p_codigo: codigo });
+  // Si entró con el código de recuperación, ese ya es el código del taller.
+  const limpio = codigo.replace(/[^a-z0-9]/gi, '').toUpperCase();
+  await usarClave(clave, limpio.length === 16 ? limpio : null);
+}
+
+// ---------- Cuenta con email: se pide un código de 6 números y con él se entra desde cualquier dispositivo.
+
+const AUTH = 'https://lkbbgyskjyyhepdxpbej.supabase.co/auth/v1/';
+
+async function auth(ruta, cuerpo) {
+  const r = await fetch(AUTH + ruta, {
+    method: 'POST',
+    headers: { apikey: PUBLICA, 'Content-Type': 'application/json' },
+    body: JSON.stringify(cuerpo),
+  });
+  const datos = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const e = new Error(datos.error_code || datos.msg || `auth: ${r.status}`);
+    e.status = r.status;
+    e.codigo = datos.error_code || '';
+    throw e;
+  }
+  return datos;
+}
+
+export const pedirCodigoEmail = (email) => auth('otp', { email, create_user: true });
+
+export async function entrarConEmail(email, codigo) {
+  const sesion = await auth('verify', { type: 'email', email, token: codigo });
+  const r = await fetch(API + 'gianre_entrar', {
+    method: 'POST',
+    headers: { apikey: PUBLICA, Authorization: `Bearer ${sesion.access_token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_clave: S.sync.clave || null }),
+  });
+  if (!r.ok) throw new Error(`gianre_entrar: ${r.status}`);
+  const clave = await r.json();
+  S.sync.email = email;
+  S.guardarMeta();
+  // Mismo taller: no cambia nada. Otro taller (el de la cuenta): se usan sus datos.
+  if (clave === S.sync.clave) return sincronizar();
+  await usarClave(clave, null);
 }

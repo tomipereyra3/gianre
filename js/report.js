@@ -30,7 +30,7 @@ const fechaCorta = (ts) =>
   new Intl.DateTimeFormat('es-AR', { day: 'numeric', month: 'short' }).format(new Date(ts)).replace(/\./g, '');
 const ultimoHecho = (diag) => Math.max(0, ...diag.items.map((i) => i.resultadoFecha || 0)) || Date.now();
 
-const SANS = 'Urbanist, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+const SANS = '"Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 const f = (w, s) => `${w} ${s}px ${SANS}`;
 const fc = (w, s) => `${w} ${s}px "Saira Condensed", "Arial Narrow", sans-serif`;
 const fx = (w, s) => `${w} ${s}px "Saira Extra Condensed", "Arial Narrow", sans-serif`;

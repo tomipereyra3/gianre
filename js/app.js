@@ -298,7 +298,42 @@ function filaAuto(a, c, cuando, onclick, cls = '') {
 // ---------- Bienvenida
 
 // Un solo dato, una sola vez: el nombre que encabeza cada diagnóstico.
+let sinEmail = false;
+
 function bienvenida() {
+  // Con cuenta pero sin datos del taller (cuenta nueva) o sin email: se pide el nombre.
+  if (S.sync.clave || sinEmail) return pasoNombre();
+  const pasos = h('div', { class: 'bienvenida-pasos' });
+  pasosEmail(pasos, () => {
+    history.replaceState({ depth: 0 }, '', '#/');
+    render();
+  });
+  return h(
+    'div',
+    { class: 'screen bienvenida' },
+    h(
+      'div',
+      { class: 'bienvenida-body' },
+      h('span', { class: 'marca-nombre' }, 'Gianre'),
+      h('h1', null, 'Ingresá con tu email'),
+      pasos,
+      h(
+        'button',
+        {
+          class: 'btn-text ya-uso',
+          type: 'button',
+          onclick: () => {
+            sinEmail = true;
+            render();
+          },
+        },
+        'Entrar sin email',
+      ),
+    ),
+  );
+}
+
+function pasoNombre() {
   const nombre = input({
     class: 'input big',
     placeholder: 'Ej: Taller Rodríguez',
@@ -327,11 +362,181 @@ function bienvenida() {
       { class: 'bienvenida-body' },
       h('span', { class: 'marca-nombre' }, 'Gianre'),
       h('h1', null, 'Nombre del taller'),
-      h('p', { class: 'lead' }, 'Aparece arriba de cada presupuesto que enviás.'),
       nombre,
       h('button', { class: 'btn btn-primary block', type: 'button', onclick: empezar }, 'Guardar y continuar', icon('flecha')),
-      h('button', { class: 'btn-text ya-uso', type: 'button', onclick: tengoCodigo }, 'Ya uso Gianre en otro dispositivo'),
+      S.sync.clave
+        ? null
+        : h(
+            'button',
+            {
+              class: 'btn-text ya-uso',
+              type: 'button',
+              onclick: () => {
+                sinEmail = false;
+                render();
+              },
+            },
+            'Ingresar con email',
+          ),
     ),
+  );
+}
+
+// ---------- Entrar con email: llega un código de 6 números
+
+const emailValido = (t) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(t.trim());
+
+function errorEmail(e) {
+  if (navigator.onLine === false || !e.status) return 'Sin internet. Probá de nuevo.';
+  if (e.status === 429 || /rate/.test(e.codigo)) return 'Esperá un minuto y pedí otro código';
+  if (e.codigo === 'email_address_not_authorized') return 'Todavía no se pueden mandar códigos a ese email';
+  if (/otp|token|expired|invalid/i.test(`${e.codigo} ${e.message}`)) return 'Código incorrecto o vencido';
+  return 'No se pudo. Probá de nuevo.';
+}
+
+// Los dos pasos (email y código) dentro de un contenedor; alTerminar se llama al entrar.
+function pasosEmail(contenedor, alTerminar) {
+  let email = '';
+  const pasoEmail = () => {
+    const campo = input({
+      class: 'input big',
+      type: 'email',
+      inputmode: 'email',
+      autocomplete: 'email',
+      autocapitalize: 'off',
+      placeholder: 'tu@email.com',
+      enterkeyhint: 'send',
+      'aria-label': 'Email',
+      value: email,
+    });
+    const boton = h('button', { class: 'btn btn-primary block', type: 'button' }, 'Recibir código');
+    const enviar = async () => {
+      const t = campo.value.trim();
+      if (!emailValido(t)) {
+        campo.focus();
+        return sacudir(campo);
+      }
+      boton.disabled = true;
+      fill(boton, 'Enviando…');
+      try {
+        await Sync.pedirCodigoEmail(t);
+        email = t;
+        pasoCodigo();
+      } catch (e) {
+        boton.disabled = false;
+        fill(boton, 'Recibir código');
+        snack(errorEmail(e));
+      }
+    };
+    boton.addEventListener('click', enviar);
+    enterPasaA(campo, enviar);
+    fill(contenedor, campo, boton);
+    requestAnimationFrame(() => campo.focus());
+  };
+  const pasoCodigo = () => {
+    const campo = input({
+      class: 'input big codigo',
+      inputmode: 'numeric',
+      autocomplete: 'one-time-code',
+      maxlength: '6',
+      placeholder: '000000',
+      enterkeyhint: 'go',
+      'aria-label': 'Código de 6 números',
+    });
+    const boton = h('button', { class: 'btn btn-primary block', type: 'button' }, 'Entrar');
+    let entrando = false;
+    const entrar = async () => {
+      const c = campo.value.replace(/\D/g, '');
+      if (c.length !== 6) {
+        campo.focus();
+        return sacudir(campo);
+      }
+      if (entrando) return;
+      entrando = true;
+      boton.disabled = true;
+      fill(boton, 'Entrando…');
+      try {
+        await Sync.entrarConEmail(email, c);
+        alTerminar();
+      } catch (e) {
+        entrando = false;
+        boton.disabled = false;
+        fill(boton, 'Entrar');
+        sacudir(campo);
+        snack(errorEmail(e));
+      }
+    };
+    campo.addEventListener('input', () => {
+      campo.value = campo.value.replace(/\D/g, '').slice(0, 6);
+      if (campo.value.length === 6) entrar();
+    });
+    boton.addEventListener('click', entrar);
+    enterPasaA(campo, entrar);
+    fill(
+      contenedor,
+      h('p', { class: 'enviado-a' }, `Código enviado a ${email}`),
+      campo,
+      boton,
+      h('button', { class: 'btn-text', type: 'button', onclick: pasoEmail }, 'Cambiar email'),
+    );
+    requestAnimationFrame(() => campo.focus());
+  };
+  pasoEmail();
+}
+
+// Desde Ajustes o el aviso del inicio: el taller de este dispositivo queda guardado con el email.
+function ingresarConEmailHoja() {
+  const pasos = h('div', { class: 'bienvenida-pasos' });
+  hoja('Ingresar con email', [pasos]);
+  pasosEmail(pasos, () =>
+    cerrarCapa(() => {
+      refrescar();
+      snack('Listo. Tus datos quedan guardados con tu email.');
+    }),
+  );
+}
+
+// ---------- Instalar la app (solo en el celular)
+
+let pedidoInstalar = null;
+addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  pedidoInstalar = e;
+});
+addEventListener('appinstalled', () => {
+  pedidoInstalar = null;
+  for (const b of document.querySelectorAll('.btn-instalar')) b.remove();
+});
+const instalada = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const esCelular = () => matchMedia('(pointer: coarse)').matches && !matchMedia('(min-width: 1024px)').matches;
+
+function botonInstalar() {
+  if (!esCelular() || instalada()) return null;
+  return h('button', { class: 'btn-instalar', type: 'button', onclick: instalar }, icon('download'), 'Instalar app');
+}
+
+async function instalar() {
+  if (pedidoInstalar) {
+    pedidoInstalar.prompt();
+    const r = await pedidoInstalar.userChoice.catch(() => null);
+    if (r?.outcome === 'accepted') pedidoInstalar = null;
+    return;
+  }
+  const iphone =
+    /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  hoja(
+    'Instalar la app',
+    [
+      h(
+        'ol',
+        { class: 'pasos-instalar' },
+        iphone
+          ? [h('li', null, 'Tocá ', icon('compartir'), ' Compartir'), h('li', null, 'Elegí «Agregar a inicio»')]
+          : [h('li', null, 'Abrí el menú ⋮ del navegador'), h('li', null, 'Elegí «Instalar app»')],
+      ),
+      h('button', { class: 'btn btn-primary block', type: 'submit' }, 'Listo'),
+    ],
+    { onSubmit: () => cerrarCapa() },
   );
 }
 
@@ -399,7 +604,6 @@ function listoEnSafari(codigo) {
       h('h1', null, 'Dispositivo conectado'),
       h('p', { class: 'lead' }, 'Si tenés Gianre en la pantalla de inicio, abrilo, tocá «Ya uso Gianre en otro dispositivo» y escribí este código:'),
       h('div', { class: 'codigo-grande' }, fmtCodigo(limpio)),
-      limpio.length === 8 ? h('p', { class: 'hint' }, 'Vence en 15 minutos.') : null,
       h(
         'div',
         { class: 'bienvenida-acciones' },
@@ -455,7 +659,6 @@ function verRecuperacion() {
   const pintar = (codigo) =>
     fill(
       cuerpo,
-      h('p', { class: 'hint' }, 'Si perdés el celular o se borra la app, con este código recuperás todo.'),
       h('div', { class: 'codigo-grande' }, fmtCodigo(codigo)),
       h(
         'button',
@@ -492,39 +695,21 @@ function verRecuperacion() {
 }
 
 // Recordatorio en el inicio hasta que lo guarden (con "Ahora no" vuelve en una semana).
-const KEY_RECORDAR = 'gianre:recordar-recuperacion';
-function avisoRecuperacion() {
+const KEY_RECORDAR = 'gianre:recordar-email';
+function avisoCuenta() {
   let pospuesto = 0;
   try {
     pospuesto = Number(localStorage.getItem(KEY_RECORDAR)) || 0;
   } catch {}
-  const hace = S.db.taller && !S.db.taller.recuperacionGuardada && pospuesto < Date.now();
-  if (!hace || !S.db.diagnosticos.some((d) => !S.vacio(d))) return null;
-  // Se pide antes, así el toque abre WhatsApp al instante (el iPhone lo exige).
-  if (!S.sync.recuperacion) Sync.pedirRecuperacion().catch(() => {});
+  if (S.sync.email || pospuesto > Date.now() || !S.db.diagnosticos.some((d) => !S.vacio(d))) return null;
   const el = h(
     'div',
     { class: 'aviso' },
-    h('b', null, 'Guardá tu código de recuperación'),
-    h('p', null, 'Si perdés el celular, con este código recuperás todos tus vehículos.'),
+    h('b', null, 'Guardá tus datos con tu email'),
     h(
       'div',
       { class: 'aviso-acciones' },
-      h(
-        'button',
-        {
-          class: 'btn btn-wa btn-sm',
-          type: 'button',
-          onclick: async () => {
-            const codigo = S.sync.recuperacion || (await Sync.pedirRecuperacion().catch(() => null));
-            if (!codigo) return snack('Necesitás internet para esto');
-            await mandarRecuperacion(codigo);
-            if (S.db.taller?.recuperacionGuardada) el.remove();
-          },
-        },
-        icon('wa'),
-        'Enviarme el código por WhatsApp',
-      ),
+      h('button', { class: 'btn btn-primary btn-sm', type: 'button', onclick: ingresarConEmailHoja }, 'Ingresar con email'),
       h(
         'button',
         {
@@ -537,7 +722,7 @@ function avisoRecuperacion() {
             el.remove();
           },
         },
-        'Recordarme después',
+        'Ahora no',
       ),
     ),
   );
@@ -558,7 +743,6 @@ function tengoCodigo() {
   hoja(
     'Ingresar código',
     [
-      h('p', { class: 'hint' }, 'Escribí el código de 8 letras que aparece en el otro dispositivo, o tu código de recuperación.'),
       campo,
       boton,
     ],
@@ -626,10 +810,8 @@ function vincularOtro() {
       fill(
         cuerpo,
         dibujarQR(qrcode, link),
-        h('p', { class: 'vincular-paso' }, 'Escaneá este código con la cámara del otro celular'),
-        h('p', { class: 'hint' }, 'En una compu: Ajustes del taller → Ingresar código de conexión'),
+        h('p', { class: 'vincular-paso' }, 'Escaneá con la cámara del otro celular'),
         h('div', { class: 'codigo-grande' }, `${codigo.slice(0, 4)} ${codigo.slice(4)}`),
-        h('p', { class: 'hint' }, 'Vence en 15 minutos.'),
       );
     })
     .catch(() =>
@@ -717,6 +899,7 @@ function inicio() {
       'header',
       { class: 'home-head' },
       h('div', { class: 'home-taller' }, h('b', null, t.nombre), estadoNube()),
+      botonInstalar(),
       iconBtn('tune', 'Ajustes del taller', () => go('/ajustes')),
     ),
     h('div', { class: 'home-saludo' }, h('h1', null, 'Vehículos'), resumen ? h('p', null, resumen) : null),
@@ -745,7 +928,7 @@ function inicio() {
         : null,
       h('button', { class: 'btn btn-primary solo-compu', type: 'button', onclick: nuevoDiag }, icon('add'), 'Crear diagnóstico'),
     ),
-    avisoRecuperacion(),
+    avisoCuenta(),
     filtros,
     lista,
     cta('Crear diagnóstico', nuevoDiag),
@@ -757,7 +940,6 @@ function vacioInicio() {
     'div',
     { class: 'empty' },
     h('h3', null, 'Todavía no hay vehículos'),
-    h('p', null, 'Cada vehículo se guarda solo cuando creás su primer diagnóstico.'),
   );
 }
 
@@ -854,7 +1036,6 @@ function nuevo() {
       'div',
       { class: 'nuevo-titulo' },
       h('h1', null, 'Seleccionar vehículo'),
-      h('p', null, 'Escribí la patente o el nombre del cliente. Si no está cargado, se agrega.'),
     ),
     h(
       'label',
@@ -1108,7 +1289,7 @@ function editorPartes(d, a) {
     h('textarea', {
       class: 'input nota',
       rows: '2',
-      placeholder: 'Nota para el cliente (sale en el presupuesto)',
+      placeholder: 'Nota para el cliente',
       'aria-label': 'Nota para el cliente',
       value: d.nota || '',
       oninput: (e) => {
@@ -1213,7 +1394,7 @@ function editorPartes(d, a) {
     if (!esCompu.matches || !previaHojas.isConnected) return;
     pintarOpciones(previaOpciones, pintarPrevia);
     if (S.vacio(d))
-      return fill(previaHojas, h('p', { class: 'previa-vacia' }, 'Agregá la primera falla para ver cómo lo recibe el cliente.'));
+      return fill(previaHojas);
     const datos = datosReporte(d);
     const hojas = formatoPrevia === 'pdf' ? dibujarPDF(datos) : [dibujarReporte(datos)];
     fill(
@@ -1483,22 +1664,39 @@ function vehiculo(id, tab, diagId) {
   // Sin sección elegida: el borrador si hay uno, si no lo que falta hacer, si no el historial.
   tab ||= borrador ? 'diagnostico' : pend.length ? 'reparacion' : diags.some((d) => !S.vacio(d)) ? 'historial' : 'diagnostico';
   const partes =
-    tab === 'diagnostico' ? seccionDiagnostico(a, diagId) : tab === 'reparacion' ? seccionReparacion(a, pend) : seccionHistorial(a, pend);
+    tab === 'diagnostico' ? seccionDiagnostico(a, diagId) : tab === 'reparacion' ? seccionReparacion(a, pend) : seccionHistorial(a);
   if (!partes) return null;
   return h(
     'div',
     { class: `screen vehiculo tab-${tab} ${partes.clase || ''}` },
-    cabeceraVehiculo(a, c),
+    cabeceraVehiculo(a, c, tab !== 'diagnostico'),
     menuVehiculo(a, tab, pend.length),
     partes.cuerpo,
     partes.abajo ? h('div', { class: 'bottombar' }, partes.abajo) : null,
   );
 }
 
-function cabeceraVehiculo(a, c) {
+function cabeceraVehiculo(a, c, chica) {
   const nombre = S.nombreAuto(a);
   const km = S.ultimoKm(a.id);
   const wa = S.waNumber(c?.telefono);
+  if (chica) {
+    return bar(
+      iconBtn('back', 'Volver a vehículos', () => volver('/')),
+      h(
+        'div',
+        { class: 'bar-veh' },
+        identidad(a, c, 'xs'),
+        h(
+          'span',
+          { class: 'bar-veh-texto' },
+          h('b', null, nombre || c?.nombre || 'Vehículo'),
+          h('small', null, [nombre ? c?.nombre : null, km ? `${S.fmtKm(km)} km` : null].filter(Boolean).join(' · ')),
+        ),
+      ),
+      iconBtn('edit', 'Editar vehículo', () => editarAuto(a)),
+    );
+  }
   return [
     bar(
       iconBtn('back', 'Volver a vehículos', () => volver('/')),
@@ -1579,7 +1777,6 @@ function seccionDiagnostico(a, diagId) {
       'div',
       { class: 'sec vacio-sec' },
       h('h2', null, 'Todavía no hay diagnósticos'),
-      h('p', null, 'Anotá las fallas que encontraste y mandale el presupuesto al cliente.'),
       h(
         'button',
         {
@@ -1623,15 +1820,15 @@ function seccionReparacion(a, pend) {
   const cuerpo = h(
     'div',
     { class: 'sec' },
+    h('h1', { class: 'sec-titulo' }, 'Reparación'),
     h(
       'div',
       { class: 'sec-head' },
-      h('h2', null, 'Para hacer'),
+      h('h2', { class: 'sec-sub' }, 'Para hacer'),
       pend.length ? h('small', null, [pend.length, falta ? S.fmtPrecio(falta) : null].filter(Boolean).join(' · ')) : null,
     ),
     pend.length
       ? [
-          h('p', { class: 'sec-hint' }, 'Tocá «Hecho» cuando termines un arreglo. Lo que no se haga queda pendiente para la próxima visita.'),
           pend.map(({ it, diag }) =>
             h(
               'div',
@@ -1655,7 +1852,7 @@ function seccionReparacion(a, pend) {
       : h('p', { class: 'vacio-sec' }, recientes.length ? 'No queda nada pendiente. ¡Todo hecho!' : 'No hay arreglos pendientes.'),
     recientes.length
       ? [
-          h('h3', { class: 'sec-sub' }, 'Hecho'),
+          h('h2', { class: 'sec-sub' }, 'Hecho'),
           recientes.map(({ it }) =>
             h(
               'div',
@@ -1766,7 +1963,6 @@ function marcarHecho(a, it, diag, ultimo) {
       ),
       h('div', { class: 'field' }, h('span', null, 'Fecha del arreglo'), opciones, otraFecha),
       h('div', { class: 'fields-row' }, field('Kilometraje', km), field('Precio cobrado ($)', precio)),
-      h('p', { class: 'hint' }, 'El kilometraje viene del último registrado. Cambialo si es otro.'),
       h('button', { class: 'btn btn-primary block', type: 'submit' }, icon('check'), 'Guardar como hecho'),
       h('button', { class: 'btn btn-ghost block', type: 'button', onclick: () => cerrarCapa() }, 'Cancelar'),
     ],
@@ -1794,8 +1990,7 @@ function marcarHecho(a, it, diag, ultimo) {
   );
 }
 
-function seccionHistorial(a, pend) {
-  const ultimo = S.diagsDe(a.id).find((d) => !S.vacio(d));
+function seccionHistorial(a) {
   const diags = S.diagsDe(a.id).filter((d) => !S.vacio(d));
   const hechos = S.hechosAuto(a.id);
   const anioAprox = !a.anio && a.patente ? S.anioPorPatente(a.patente) : null;
@@ -1830,43 +2025,10 @@ function seccionHistorial(a, pend) {
     cuerpo: h(
       'div',
       { class: 'sec' },
-      anioAprox
-        ? h(
-            'p',
-            { class: 'hero-anio' },
-            `Año aproximado: ${anioAprox}, según la patente`,
-            h(
-              'button',
-              {
-                class: 'btn-text',
-                type: 'button',
-                onclick: () => {
-                  a.anio = String(anioAprox);
-                  S.save();
-                  refrescar();
-                  snack(`Año ${anioAprox} guardado`);
-                },
-              },
-              'Confirmar año',
-            ),
-          )
-        : null,
-      pend.length
-        ? h(
-            'button',
-            { class: 'pend-resumen', type: 'button', onclick: () => go(`/auto/${a.id}/reparacion`, { replace: true }) },
-            h('span', { class: 'fila' }, h('b', null, `Pendiente · ${pend.length}`), h('span', { class: 'ir' }, 'Ir a Reparación')),
-            h(
-              'span',
-              { class: 'lista' },
-              pend.map(({ it, diag }) => (diag === ultimo ? it.texto.trim() : `${it.texto.trim()} (desde ${S.fmtFecha(diag.fecha)})`)).join(' · '),
-            ),
-          )
-        : null,
       h(
         'div',
         { class: 'sec-head' },
-        h('h2', null, 'Historial clínico'),
+        h('h1', { class: 'sec-titulo' }, 'Historial clínico'),
         grupos.length
           ? h(
               'small',
@@ -1921,6 +2083,27 @@ function seccionHistorial(a, pend) {
             ),
           )
         : h('p', { class: 'vacio-sec' }, 'Todavía no hay diagnósticos ni arreglos.'),
+      anioAprox
+        ? h(
+            'p',
+            { class: 'hero-anio' },
+            `Año aproximado: ${anioAprox}, según la patente`,
+            h(
+              'button',
+              {
+                class: 'btn-text',
+                type: 'button',
+                onclick: () => {
+                  a.anio = String(anioAprox);
+                  S.save();
+                  refrescar();
+                  snack(`Año ${anioAprox} guardado`);
+                },
+              },
+              'Confirmar año',
+            ),
+          )
+        : null,
     ),
   };
 }
@@ -2266,7 +2449,7 @@ function ajustes() {
       h(
         'div',
         { class: 'logo-pie' },
-        h('span', null, 'Aparece en los presupuestos, diagnósticos y PDF.'),
+        h('span'),
         t.logo
           ? h(
               'span',
@@ -2291,6 +2474,25 @@ function ajustes() {
       ),
     ),
     h('div', { class: 'fields pad' }, field('Nombre del taller', nombre), field('WhatsApp del taller', tel), field('Dirección', dir)),
+    titulo('Cuenta'),
+    h(
+      'div',
+      { class: 'card' },
+      S.sync.email
+        ? h(
+            'div',
+            { class: 'row' },
+            h('span', { class: 'avatar mas' }, icon('check')),
+            h('span', { class: 'row-main' }, h('span', { class: 'row-title' }, S.sync.email), h('span', { class: 'row-sub' }, 'Email de la cuenta')),
+          )
+        : h(
+            'button',
+            { class: 'row', type: 'button', onclick: ingresarConEmailHoja },
+            h('span', { class: 'avatar mas' }, icon('add')),
+            h('span', { class: 'row-main' }, h('span', { class: 'row-title' }, 'Ingresar con email')),
+            h('span', { class: 'go' }, icon('chevron')),
+          ),
+    ),
     titulo('Usar en otros dispositivos'),
     estadoNube('pad'),
     h(
@@ -2300,14 +2502,14 @@ function ajustes() {
         'button',
         { class: 'row', type: 'button', onclick: vincularOtro },
         h('span', { class: 'avatar mas' }, icon('qr')),
-        h('span', { class: 'row-main' }, h('span', { class: 'row-title' }, 'Conectar otro dispositivo'), h('span', { class: 'row-sub' }, 'Muestra un código QR para escanear')),
+        h('span', { class: 'row-main' }, h('span', { class: 'row-title' }, 'Conectar otro dispositivo')),
         h('span', { class: 'go' }, icon('chevron')),
       ),
       h(
         'button',
         { class: 'row', type: 'button', onclick: tengoCodigo },
         h('span', { class: 'avatar mas' }, icon('teclado')),
-        h('span', { class: 'row-main' }, h('span', { class: 'row-title' }, 'Ingresar código de conexión'), h('span', { class: 'row-sub' }, 'Para usar los datos de otro dispositivo')),
+        h('span', { class: 'row-main' }, h('span', { class: 'row-title' }, 'Ingresar código de conexión')),
         h('span', { class: 'go' }, icon('chevron')),
       ),
       h(
@@ -2318,7 +2520,7 @@ function ajustes() {
           'span',
           { class: 'row-main' },
           h('span', { class: 'row-title' }, 'Código de recuperación'),
-          h('span', { class: 'row-sub' }, S.db.taller?.recuperacionGuardada ? 'Para recuperar todo si perdés el celular' : 'Todavía no lo guardaste'),
+          S.db.taller?.recuperacionGuardada ? null : h('span', { class: 'row-sub' }, 'Todavía no lo guardaste'),
         ),
         h('span', { class: 'go' }, icon('chevron')),
       ),

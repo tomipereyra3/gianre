@@ -60,7 +60,7 @@ html.locked {
 }
 
 body {
-  font-family: Urbanist, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   font-size: 16px;
   font-weight: 500;
   line-height: 1.4;
@@ -685,7 +685,7 @@ textarea.input {
   text-align: center;
   text-transform: uppercase;
   letter-spacing: 0.18em;
-  font-family: 'Saira Condensed', Urbanist, sans-serif;
+  font-family: 'Saira Condensed', 'Plus Jakarta Sans', sans-serif;
   font-weight: 700;
   font-size: 22px;
 }
@@ -768,7 +768,7 @@ input::-webkit-calendar-picker-indicator {
 .codigo-grande {
   max-width: 300px;
   margin: 18px 0 8px;
-  font: 700 34px/1.25 'Saira Condensed', Urbanist, sans-serif;
+  font: 700 34px/1.25 'Saira Condensed', 'Plus Jakarta Sans', sans-serif;
   letter-spacing: 0.14em;
   word-spacing: 0.2em;
 }
@@ -2918,6 +2918,280 @@ input::-webkit-calendar-picker-indicator {
   font-size: 13px;
   font-weight: 700;
   color: var(--accent);
+}
+
+/* ---------- Encabezado transparente: se ve el contenido detrás */
+
+.bar,
+.search {
+  background: rgba(15, 15, 15, 0.6);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  backdrop-filter: blur(18px) saturate(160%);
+}
+
+.bar .icon-btn {
+  background: rgba(30, 30, 30, 0.7);
+}
+
+/* Encabezado chico del vehículo (Reparación e Historial) */
+.bar-veh {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bar-veh-texto {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.bar-veh-texto b,
+.bar-veh-texto small {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bar-veh-texto b {
+  font-size: 14.5px;
+  font-weight: 700;
+}
+
+.bar-veh-texto small {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.plate.xs { font-size: 4px; }
+.plate.v.xs { font-size: 3.1px; }
+
+.avatar.xs {
+  width: 36px;
+  height: 36px;
+  font-size: 13px;
+}
+
+.sec-titulo {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.sec-head:has(> .sec-titulo) {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.sec > .sec-titulo + .sec-head {
+  margin-top: 6px;
+}
+
+h2.sec-sub {
+  margin-top: 0;
+}
+
+.sec .sec-head + .pend,
+.sec .sec-sub + .hecho-card {
+  margin-top: 2px;
+}
+
+/* Entrar con email */
+.bienvenida-pasos {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.sheet .bienvenida-pasos {
+  margin-top: 0;
+}
+
+.bienvenida-pasos .input.big {
+  text-align: center;
+}
+
+.enviado-a {
+  font-size: 15px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* Instalar la app */
+.btn-instalar {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 14px 0 10px;
+  border-radius: 20px;
+  background: rgba(233, 245, 22, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(233, 245, 22, 0.4);
+  color: var(--accent);
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.btn-instalar .icon {
+  width: 18px;
+  height: 18px;
+}
+
+.pasos-instalar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-left: 22px;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.pasos-instalar .icon {
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  vertical-align: -4px;
+  color: var(--accent);
+}
+
+/* ---------- Celular: menos espacio desperdiciado */
+
+@media (max-width: 1023px) {
+  .bar {
+    min-height: 62px;
+    gap: 10px;
+    padding: calc(8px + env(safe-area-inset-top)) 14px 8px;
+  }
+
+  .icon-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .home-head {
+    padding: calc(14px + env(safe-area-inset-top)) 16px 0;
+  }
+
+  .home-saludo {
+    padding: 10px 16px 0;
+  }
+
+  .home-saludo h1 {
+    font-size: 30px;
+  }
+
+  .search {
+    padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+  }
+
+  .search label {
+    height: 50px;
+  }
+
+  .filtros {
+    padding: 0 16px 2px;
+  }
+
+  .autos {
+    gap: 8px;
+    padding: 6px 16px 0;
+  }
+
+  .auto {
+    padding: 10px 12px 10px 8px;
+  }
+
+  .pad,
+  .nuevo-titulo,
+  .editor-titulo,
+  .hero,
+  .hero-linea {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .label {
+    padding: 20px 16px 10px;
+  }
+
+  .card,
+  .lista-fallas,
+  .banner,
+  .km,
+  .stats,
+  .cliente-card,
+  .aviso {
+    margin-left: 16px;
+    margin-right: 16px;
+  }
+
+  .extras,
+  .nota-box,
+  .trabajos,
+  .sec,
+  .sec-pie {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .sec {
+    padding-top: 12px;
+    gap: 8px;
+  }
+
+  .veh-datos {
+    padding: 0 16px 10px;
+  }
+
+  .veh-texto h1 {
+    font-size: 20px;
+  }
+
+  .vehiculo .editor-cols .lista-fallas,
+  .vehiculo .editor-cols .banner {
+    margin-top: 10px;
+  }
+
+  .pend,
+  .hecho-card {
+    padding: 12px 10px 12px 14px;
+  }
+
+  .bottombar {
+    padding: 22px 12px calc(12px + env(safe-area-inset-bottom));
+  }
+
+  .envio {
+    gap: 10px;
+    padding: 14px;
+    border-radius: 26px;
+  }
+
+  .btn {
+    height: 54px;
+  }
+
+  .btn-circulo {
+    width: 54px;
+    height: 54px;
+  }
+
+  .plate-input {
+    margin: 16px auto 14px;
+  }
+
+  .nuevo-titulo h1 {
+    font-size: 30px;
+  }
 }
 
 /* ---------- Menú lateral (solo en la compu) */
