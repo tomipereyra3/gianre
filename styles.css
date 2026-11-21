@@ -2572,124 +2572,32 @@ input::-webkit-calendar-picker-indicator {
     padding-top: 24px;
   }
 
+  /* Tarjetas compactas: varias por fila, igual de chicas que en el celular */
   .autos {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 18px;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 12px;
   }
 
   .inicio .auto,
   .ficha-cliente .auto {
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas:
-      'estado go'
-      'titulo go'
-      'sub sub'
-      'id id'
-      'monto prog';
-    row-gap: 5px;
-    padding: 20px;
-    border-radius: 28px;
+    grid-template-columns: 112px minmax(0, 1fr) auto;
+    min-height: 72px;
+    padding: 12px 16px 12px 12px;
   }
 
   .inicio .auto[data-estado='urgente'] {
-    box-shadow: inset 0 0 0 1.5px rgba(255, 92, 80, 0.45);
-  }
-
-  .inicio .auto > .pill,
-  .ficha-cliente .auto > .pill {
-    justify-self: start;
-    align-self: start;
-  }
-
-  .inicio .auto-titulo,
-  .ficha-cliente .auto-titulo {
-    font-size: 21px;
-    letter-spacing: -0.01em;
-    align-self: start;
-  }
-
-  .inicio .auto-sub,
-  .ficha-cliente .auto-sub {
-    font-size: 14px;
-  }
-
-  .inicio .auto-id,
-  .ficha-cliente .auto-id {
-    height: 92px;
-    margin: 10px 0 8px;
-    border-radius: 20px;
-    background: #141414;
+    box-shadow: inset 0 0 0 1px rgba(255, 92, 80, 0.35);
   }
 
   .inicio .auto .plate,
   .ficha-cliente .auto .plate {
-    font-size: 9.5px;
+    font-size: 5.6px;
   }
 
   .inicio .auto .plate.v,
   .ficha-cliente .auto .plate.v {
-    font-size: 7.5px;
-  }
-
-  .inicio .auto-monto,
-  .ficha-cliente .auto-monto {
-    justify-self: start;
-    align-self: center;
-    font-size: 19px;
-    color: var(--text);
-  }
-
-  .inicio .auto-monto small,
-  .ficha-cliente .auto-monto small {
-    display: inline;
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--muted);
-  }
-
-  .inicio .auto-prog,
-  .ficha-cliente .auto-prog {
-    grid-area: prog;
-    display: block;
-    justify-self: end;
-    align-self: center;
-    font-size: 13px;
-    font-weight: 600;
-    color: #c9c9c2;
-  }
-
-  .inicio .auto-go,
-  .ficha-cliente .auto-go {
-    display: grid;
-    align-self: start;
-    width: 44px;
-    height: 44px;
-    background: var(--accent);
-    color: var(--on-accent);
-  }
-
-  .ficha-cliente .auto.nueva {
-    grid-template-areas: 'id titulo go';
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    align-items: center;
-  }
-
-  .ficha-cliente .auto.nueva .auto-id {
-    height: auto;
-    margin: 0;
-    background: none;
-  }
-
-  .ficha-cliente .auto.nueva .auto-titulo {
-    align-self: center;
-    font-size: 17px;
-  }
-
-  .ficha-cliente .auto.nueva .auto-go {
-    align-self: center;
-    background: var(--surface-3);
-    color: var(--text);
+    font-size: 4.3px;
   }
 
   /* Pantallas angostas en la compu (nuevo, ajustes, cliente) */
