@@ -472,28 +472,14 @@ function pasosEmail(contenedor, alTerminar) {
     });
     boton.addEventListener('click', entrar);
     enterPasaA(campo, entrar);
-    // El mail trae un link; el código queda a mano por si el mail lo trae.
-    const caja = h('div', { class: 'bienvenida-pasos codigo-caja', hidden: true }, campo, boton);
-    const conCodigo = h(
-      'button',
-      {
-        class: 'btn-text',
-        type: 'button',
-        onclick: () => {
-          caja.hidden = false;
-          conCodigo.hidden = true;
-          campo.focus();
-        },
-      },
-      'Tengo un código',
-    );
     fill(
       contenedor,
-      h('p', { class: 'enviado-a' }, `Te mandamos un mail a ${email}. Abrilo en este dispositivo y tocá el link.`),
-      caja,
-      conCodigo,
+      h('p', { class: 'enviado-a' }, `Código enviado a ${email}`),
+      campo,
+      boton,
       h('button', { class: 'btn-text', type: 'button', onclick: pasoEmail }, 'Cambiar email'),
     );
+    requestAnimationFrame(() => campo.focus());
   };
   pasoEmail();
 }
