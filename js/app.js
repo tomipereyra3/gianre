@@ -300,6 +300,7 @@ function vinculando(codigo) {
   Sync.vincular(codigo)
     .finally(() => (vinculandoAhora = null))
     .then(() => {
+      if (enSafariDeIphone()) return listoEnSafari(codigo);
       history.replaceState({ depth: 0 }, '', '#/');
       render();
       snack('Listo. Ya tenés los mismos datos.');
@@ -320,11 +321,177 @@ function vinculando(codigo) {
   );
 }
 
+// iPhone: el QR abre Safari, que no comparte datos con la app de la pantalla de inicio.
+const enSafariDeIphone = () =>
+  (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) &&
+  !(navigator.standalone === true || matchMedia('(display-mode: standalone)').matches);
+
+const fmtCodigo = (c) => (c.match(/.{1,4}/g) || []).join(' ');
+
+function listoEnSafari(codigo) {
+  const limpio = codigo.replace(/[^a-z0-9]/gi, '').toUpperCase();
+  app.replaceChildren(
+    h(
+      'div',
+      { class: 'screen bienvenida' },
+      h(
+        'div',
+        { class: 'bienvenida-body' },
+        marca(),
+        h('h1', null, 'Listo'),
+        h('p', { class: 'lead' }, '¿Tenés Gianre en la pantalla de inicio? Abrilo, tocá «Tengo un código» y escribí:'),
+        h('div', { class: 'codigo-grande izq' }, fmtCodigo(limpio)),
+        limpio.length === 8 ? h('p', { class: 'hint' }, 'Vence en 15 minutos.') : null,
+      ),
+      h(
+        'div',
+        { class: 'bottombar' },
+        h(
+          'button',
+          {
+            class: 'btn btn-primary',
+            type: 'button',
+            onclick: () => {
+              history.replaceState({ depth: 0 }, '', '#/');
+              render();
+            },
+          },
+          'Seguir acá',
+        ),
+      ),
+    ),
+  );
+}
+
+// ---------- Código de recuperación (por si pierden el único dispositivo)
+
+function recuperacionGuardada() {
+  if (!S.db.taller) return;
+  S.db.taller.recuperacionGuardada = Date.now();
+  S.save();
+}
+
+// Se lo mandan a sí mismos por WhatsApp: el link recupera todo con un toque.
+async function mandarRecuperacion(codigo) {
+  const link = `${location.origin}${location.pathname}#/vincular/${codigo}`;
+  const text = `Código para recuperar ${S.db.taller?.nombre || 'el taller'} en Gianre: ${fmtCodigo(codigo)}\nSi perdés el celular, abrí este link y recuperás todo:\n${link}`;
+  if (navigator.share) {
+    try {
+      await navigator.share({ text });
+      recuperacionGuardada();
+      return snack('Guardado. Si perdés el celular, abrí ese link.');
+    } catch (e) {
+      if (e.name === 'AbortError') return;
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    recuperacionGuardada();
+    snack('Copiado. Pegalo en tu chat de WhatsApp.');
+  } catch {
+    snack('No se pudo copiar. Anotá el código.');
+  }
+}
+
+function verRecuperacion() {
+  const cuerpo = h('div', { class: 'vincular' }, h('p', { class: 'hint' }, 'Buscando tu código…'));
+  const pintar = (codigo) =>
+    fill(
+      cuerpo,
+      h('p', { class: 'hint' }, 'Si perdés el celular o se borra la app, con este código recuperás todo.'),
+      h('div', { class: 'codigo-grande' }, fmtCodigo(codigo)),
+      h(
+        'button',
+        { class: 'btn btn-wa block', type: 'button', onclick: () => mandarRecuperacion(codigo) },
+        icon('wa'),
+        'Mandármelo por WhatsApp',
+      ),
+      h(
+        'button',
+        {
+          class: 'btn-text',
+          type: 'button',
+          onclick: () =>
+            Sync.pedirRecuperacion(true)
+              .then((nuevo) => {
+                if (S.db.taller) {
+                  delete S.db.taller.recuperacionGuardada;
+                  S.save();
+                }
+                pintar(nuevo);
+                snack('Código nuevo. El anterior ya no sirve.');
+              })
+              .catch(() => snack('Necesitás internet para cambiarlo')),
+        },
+        'Cambiar código',
+      ),
+    );
+  hoja('Código de recuperación', [cuerpo, h('button', { class: 'btn btn-ghost block', type: 'submit' }, 'Listo')], {
+    onSubmit: () => cerrarCapa(),
+  });
+  Sync.pedirRecuperacion()
+    .then(pintar)
+    .catch(() => fill(cuerpo, h('p', { class: 'hint' }, 'Necesitás internet para ver el código. Probá cuando haya señal.')));
+}
+
+// Recordatorio en el inicio hasta que lo guarden (con "Ahora no" vuelve en una semana).
+const KEY_RECORDAR = 'gianre:recordar-recuperacion';
+function avisoRecuperacion() {
+  let pospuesto = 0;
+  try {
+    pospuesto = Number(localStorage.getItem(KEY_RECORDAR)) || 0;
+  } catch {}
+  const hace = S.db.taller && !S.db.taller.recuperacionGuardada && pospuesto < Date.now();
+  if (!hace || !S.db.diagnosticos.some((d) => !S.vacio(d))) return null;
+  // Se pide antes, así el toque abre WhatsApp al instante (el iPhone lo exige).
+  if (!S.sync.recuperacion) Sync.pedirRecuperacion().catch(() => {});
+  const el = h(
+    'div',
+    { class: 'aviso' },
+    h('b', null, 'Guardá tu código de recuperación'),
+    h('p', null, 'Si perdés el celular, con él recuperás todos los autos.'),
+    h(
+      'div',
+      { class: 'aviso-acciones' },
+      h(
+        'button',
+        {
+          class: 'btn btn-wa btn-sm',
+          type: 'button',
+          onclick: async () => {
+            const codigo = S.sync.recuperacion || (await Sync.pedirRecuperacion().catch(() => null));
+            if (!codigo) return snack('Necesitás internet para esto');
+            await mandarRecuperacion(codigo);
+            if (S.db.taller?.recuperacionGuardada) el.remove();
+          },
+        },
+        icon('wa'),
+        'Mandármelo por WhatsApp',
+      ),
+      h(
+        'button',
+        {
+          class: 'btn-text',
+          type: 'button',
+          onclick: () => {
+            try {
+              localStorage.setItem(KEY_RECORDAR, String(Date.now() + 7 * 864e5));
+            } catch {}
+            el.remove();
+          },
+        },
+        'Ahora no',
+      ),
+    ),
+  );
+  return el;
+}
+
 function tengoCodigo() {
   const campo = input({
     class: 'input big codigo',
-    placeholder: 'XXXX XXXX',
-    maxlength: '9',
+    placeholder: 'Código',
+    maxlength: '24',
     autocapitalize: 'characters',
     autocorrect: 'off',
     enterkeyhint: 'go',
@@ -334,7 +501,7 @@ function tengoCodigo() {
   hoja(
     'Tengo un código',
     [
-      h('p', { class: 'hint' }, 'Está en el otro dispositivo, en Ajustes → Vincular otro dispositivo.'),
+      h('p', { class: 'hint' }, 'El de 8 letras del otro dispositivo, o tu código de recuperación.'),
       campo,
       boton,
     ],
@@ -342,7 +509,7 @@ function tengoCodigo() {
       foco: true,
       onSubmit: async () => {
         const c = campo.value.replace(/[^a-z0-9]/gi, '');
-        if (c.length < 8) return sacudir(campo);
+        if (c.length !== 8 && c.length !== 16) return sacudir(campo);
         boton.disabled = true;
         fill(boton, 'Vinculando…');
         try {
@@ -459,6 +626,7 @@ function inicio() {
     { class: 'screen' },
     h('header', { class: 'home-head' }, h('h1', null, t.nombre), iconBtn('settings', 'Ajustes', () => go('/ajustes'))),
     buscador,
+    avisoRecuperacion(),
     lista,
     fab('Nuevo diagnóstico', () => go('/nuevo')),
   );
@@ -1546,6 +1714,18 @@ function ajustes() {
         { class: 'row', type: 'button', onclick: tengoCodigo },
         h('span', { class: 'avatar mas' }, icon('teclado')),
         h('span', { class: 'row-main' }, h('span', { class: 'row-title' }, 'Tengo un código')),
+        h('span', { class: 'go' }, icon('chevron')),
+      ),
+      h(
+        'button',
+        { class: 'row', type: 'button', onclick: verRecuperacion },
+        h('span', { class: 'avatar mas' }, icon('llave')),
+        h(
+          'span',
+          { class: 'row-main' },
+          h('span', { class: 'row-title' }, 'Código de recuperación'),
+          S.db.taller?.recuperacionGuardada ? null : h('span', { class: 'row-sub' }, 'Todavía no lo guardaste'),
+        ),
         h('span', { class: 'go' }, icon('chevron')),
       ),
     ),

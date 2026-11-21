@@ -1802,3 +1802,51 @@ input::-webkit-calendar-picker-indicator {
   font-size: 16px;
   font-variant-numeric: tabular-nums;
 }
+
+/* ---------- Código de recuperación */
+
+.aviso {
+  margin: 4px 16px 12px;
+  padding: 16px 16px 12px;
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--pronto);
+}
+
+.aviso b {
+  display: block;
+  font-size: 16px;
+}
+
+.aviso p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.aviso-acciones {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.aviso .btn-sm .icon {
+  width: 20px;
+  height: 20px;
+}
+
+.codigo-grande {
+  max-width: 300px;
+  line-height: 1.25;
+  word-spacing: 0.2em;
+}
+
+.codigo-grande.izq {
+  margin: 18px 0 8px;
+}
+
+.vincular .btn-wa {
+  margin-top: 14px;
+}

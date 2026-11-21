@@ -108,6 +108,18 @@ export async function pedirCodigo() {
   return rpc('gianre_codigo', { p_clave: S.sync.clave });
 }
 
+// Código de recuperación del taller (16 letras, no vence). Se guarda acá para
+// poder mostrarlo sin señal. renovar = true lo cambia y el anterior deja de servir.
+export async function pedirRecuperacion(renovar = false) {
+  if (!renovar && S.sync.recuperacion) return S.sync.recuperacion;
+  await sincronizar();
+  if (!S.sync.clave) throw new Error('sin clave');
+  const codigo = await rpc('gianre_recuperacion', { p_clave: S.sync.clave, p_renovar: renovar });
+  S.sync.recuperacion = codigo;
+  S.guardarMeta();
+  return codigo;
+}
+
 // Este dispositivo pasa a usar los datos del taller del código.
 // Lo que ya tenía cargado se suma; el nombre y logo del taller vienen del otro.
 export async function vincular(codigo) {
@@ -120,6 +132,9 @@ export async function vincular(codigo) {
   }
   S.sync.clave = clave;
   S.sync.version = 0;
+  // Si entró con el código de recuperación, ese ya es el código del taller.
+  const limpio = codigo.replace(/[^a-z0-9]/gi, '').toUpperCase();
+  S.sync.recuperacion = limpio.length === 16 ? limpio : null;
   if (S.db.taller) S.db.taller.act = 0;
   S.marcarTodo({ menosTaller: true });
   await sincronizar();
