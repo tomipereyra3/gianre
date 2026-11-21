@@ -165,13 +165,23 @@ async function auth(ruta, cuerpo) {
   return datos;
 }
 
-export const pedirCodigoEmail = (email) => auth('otp', { email, create_user: true });
+// El mail trae un link (y, si la plantilla lo incluye, un código de 6 números).
+export const pedirCodigoEmail = (email) =>
+  auth(`otp?redirect_to=${encodeURIComponent(location.origin + location.pathname)}`, { email, create_user: true });
 
-export async function entrarConEmail(email, codigo) {
-  const sesion = await auth('verify', { type: 'email', email, token: codigo });
+function emailDelToken(token) {
+  try {
+    return JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).email || '';
+  } catch {
+    return '';
+  }
+}
+
+// Con la sesión (del código o del link del mail) se pide la clave del taller de la cuenta.
+export async function entrarConSesion(token, email = emailDelToken(token)) {
   const r = await fetch(API + 'gianre_entrar', {
     method: 'POST',
-    headers: { apikey: PUBLICA, Authorization: `Bearer ${sesion.access_token}`, 'Content-Type': 'application/json' },
+    headers: { apikey: PUBLICA, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ p_clave: S.sync.clave || null }),
   });
   if (!r.ok) throw new Error(`gianre_entrar: ${r.status}`);
@@ -181,4 +191,9 @@ export async function entrarConEmail(email, codigo) {
   // Mismo taller: no cambia nada. Otro taller (el de la cuenta): se usan sus datos.
   if (clave === S.sync.clave) return sincronizar();
   await usarClave(clave, null);
+}
+
+export async function entrarConEmail(email, codigo) {
+  const sesion = await auth('verify', { type: 'email', email, token: codigo });
+  return entrarConSesion(sesion.access_token, email);
 }

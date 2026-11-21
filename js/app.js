@@ -472,14 +472,28 @@ function pasosEmail(contenedor, alTerminar) {
     });
     boton.addEventListener('click', entrar);
     enterPasaA(campo, entrar);
+    // El mail trae un link; el código queda a mano por si el mail lo trae.
+    const caja = h('div', { class: 'bienvenida-pasos codigo-caja', hidden: true }, campo, boton);
+    const conCodigo = h(
+      'button',
+      {
+        class: 'btn-text',
+        type: 'button',
+        onclick: () => {
+          caja.hidden = false;
+          conCodigo.hidden = true;
+          campo.focus();
+        },
+      },
+      'Tengo un código',
+    );
     fill(
       contenedor,
-      h('p', { class: 'enviado-a' }, `Código enviado a ${email}`),
-      campo,
-      boton,
+      h('p', { class: 'enviado-a' }, `Te mandamos un mail a ${email}. Abrilo en este dispositivo y tocá el link.`),
+      caja,
+      conCodigo,
       h('button', { class: 'btn-text', type: 'button', onclick: pasoEmail }, 'Cambiar email'),
     );
-    requestAnimationFrame(() => campo.focus());
   };
   pasoEmail();
 }
@@ -2536,8 +2550,29 @@ function ajustes() {
 
 // ---------- Inicio
 
+// Al tocar el link del mail se vuelve a la app con la sesión en la dirección.
+function vueltaDelMail() {
+  const p = new URLSearchParams(location.hash.slice(1));
+  if (p.get('access_token')) return { token: p.get('access_token') };
+  if (p.get('error_code') || p.get('error')) return { error: true };
+  return null;
+}
+const mail = vueltaDelMail();
+if (mail) history.replaceState({ depth: 0 }, '', location.pathname + location.search + '#/');
 if (!history.state) history.replaceState({ depth: 0 }, '', location.hash || '#/');
 render();
+if (mail?.token) {
+  app.replaceChildren(pantallaCentro(h('h1', null, 'Entrando…')));
+  Sync.entrarConSesion(mail.token)
+    .then(() => {
+      render();
+      snack('Listo. Ya estás en tu taller.');
+    })
+    .catch(() => {
+      render();
+      snack('No se pudo entrar. Pedí otro mail.');
+    });
+} else if (mail?.error) snack('El link venció o ya se usó. Pedí otro.');
 
 // Si llega algo del otro dispositivo, se ve al toque (salvo que estén escribiendo).
 let refrescoPendiente = false;
