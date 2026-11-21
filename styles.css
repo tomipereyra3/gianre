@@ -2408,6 +2408,518 @@ input::-webkit-calendar-picker-indicator {
   font-weight: 700;
 }
 
+/* ---------- Vehículo: Diagnóstico, Reparación e Historial con el menú de abajo */
+
+.screen.vehiculo {
+  padding-bottom: calc(88px + env(safe-area-inset-bottom));
+  animation: fade 0.18s;
+}
+
+.screen.vehiculo > .bottombar {
+  bottom: calc(78px + env(safe-area-inset-bottom));
+  padding-bottom: 10px;
+}
+
+.veh-datos {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 20px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.veh-texto {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.veh-texto h1 {
+  font-size: 21px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.veh-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 6px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.veh-cliente {
+  font-weight: 600;
+  color: var(--text-2);
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.25);
+  text-underline-offset: 3px;
+}
+
+.screen > .menu-veh {
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  z-index: 25;
+  width: min(100%, 520px);
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 8px 10px calc(10px + env(safe-area-inset-bottom));
+  background: #161616;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.menu-veh button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.menu-veh .ic {
+  position: relative;
+  width: 60px;
+  height: 32px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  transition: background 0.15s;
+}
+
+.menu-veh .icon {
+  width: 22px;
+  height: 22px;
+}
+
+.menu-veh [aria-current='page'] {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.menu-veh [aria-current='page'] .ic {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.menu-veh .badge {
+  position: absolute;
+  top: -5px;
+  right: 4px;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: var(--urgente);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 19px;
+  text-align: center;
+  box-shadow: 0 0 0 2px #161616;
+}
+
+.sec {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 20px 0;
+}
+
+.sec-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sec-head h2 {
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.sec-head small,
+.sec-tit small {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.sec-tit {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sec-tit small {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sec-hint {
+  margin-bottom: 2px;
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.sec-sub {
+  margin-top: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #c9c9c2;
+}
+
+.sec-pie {
+  display: flex;
+  justify-content: center;
+  padding: 14px 20px 4px;
+}
+
+.estado-diag {
+  flex: none;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 14px;
+  background: var(--surface-3);
+  color: var(--text-2);
+  display: inline-flex;
+  align-items: center;
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.estado-diag.enviado {
+  background: var(--bien-bg);
+  color: var(--bien-text);
+}
+
+.vehiculo .editor-cols .banner,
+.vehiculo .editor-cols .lista-fallas {
+  margin-top: 14px;
+}
+
+.pend,
+.hecho-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 12px 14px 16px;
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+  text-align: left;
+}
+
+.pend .dot {
+  width: 9px;
+  height: 9px;
+}
+
+.pend-texto {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.pend-texto b {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.pend-texto small {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.pend-texto em {
+  font-style: normal;
+  font-weight: 700;
+  color: var(--c-text);
+}
+
+.btn-hecho {
+  flex: none;
+  height: 40px;
+  padding: 0 14px 0 11px;
+  border-radius: 20px;
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.btn-hecho .icon {
+  width: 18px;
+  height: 18px;
+}
+
+.btn-hecho:active {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.hecho-card {
+  padding: 12px 6px 12px 16px;
+  background: rgba(67, 209, 127, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(67, 209, 127, 0.25);
+}
+
+.hecho-card small {
+  color: var(--bien-text);
+}
+
+.tilde {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--bien);
+  color: #0f0f0f;
+  display: grid;
+  place-items: center;
+}
+
+.tilde .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.vacio-sec {
+  padding: 28px 12px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.sec.vacio-sec {
+  align-items: center;
+  gap: 10px;
+  padding-top: 40px;
+}
+
+.sec.vacio-sec h2 {
+  font-size: 20px;
+  color: var(--text);
+}
+
+.sec.vacio-sec .btn {
+  margin-top: 10px;
+}
+
+.chips-fecha {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chips-fecha button {
+  height: 44px;
+  padding: 0 16px;
+  border-radius: 22px;
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  color: #e4e4dd;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.chips-fecha [aria-checked='true'] {
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: none;
+  font-weight: 700;
+}
+
+.chips-fecha + .input {
+  margin-top: 8px;
+}
+
+.sheet .pend {
+  background: var(--surface-2);
+}
+
+.pend-resumen {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px rgba(255, 164, 59, 0.45);
+  text-align: left;
+}
+
+.pend-resumen .fila {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pend-resumen b {
+  font-size: 15px;
+  color: var(--pronto-text);
+}
+
+.pend-resumen .ir {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.pend-resumen .lista {
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+
+.vehiculo .hero-anio {
+  padding: 0;
+}
+
+.linea-tiempo {
+  display: flex;
+  flex-direction: column;
+  padding-top: 4px;
+}
+
+.dia {
+  display: flex;
+  gap: 12px;
+}
+
+.dia-marca {
+  flex: none;
+  width: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.dia-marca::before {
+  content: '';
+  width: 12px;
+  height: 12px;
+  margin-top: 4px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.dia-marca::after {
+  content: '';
+  flex: 1;
+  width: 2px;
+  margin-top: 4px;
+  background: #2a2a2a;
+}
+
+.dia:last-child .dia-marca::after {
+  display: none;
+}
+
+.dia-cuerpo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 18px;
+}
+
+.dia-cab {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dia-cab b {
+  font-size: 15px;
+}
+
+.dia-cab span {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.evento {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+}
+
+.evento .tilde,
+.ic-diag {
+  width: 24px;
+  height: 24px;
+}
+
+.ic-diag {
+  flex: none;
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--text-2);
+  display: grid;
+  place-items: center;
+}
+
+.ic-diag .icon,
+.evento .tilde .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.evento-texto {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.evento-texto b {
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.evento-texto small {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.evento-der {
+  flex: none;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.evento-der.link {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
 /* ---------- Menú lateral (solo en la compu) */
 
 .lateral {
@@ -2734,6 +3246,78 @@ input::-webkit-calendar-picker-indicator {
 
   .plate.v.lg {
     font-size: 11.5px;
+  }
+
+  /* Vehículo en la compu: las tres secciones como pestañas arriba */
+  .screen.vehiculo {
+    padding-bottom: 48px;
+  }
+
+  .vehiculo > .bar {
+    position: static;
+  }
+
+  .screen > .menu-veh {
+    position: sticky;
+    top: 0;
+    left: auto;
+    bottom: auto;
+    width: auto;
+    transform: none;
+    display: flex;
+    gap: 8px;
+    padding: 12px 20px;
+    background: var(--bg);
+    box-shadow: 0 1px 0 var(--line);
+  }
+
+  .menu-veh button {
+    flex-direction: row;
+    gap: 8px;
+    height: 46px;
+    padding: 0 18px 0 8px;
+    border-radius: 23px;
+    font-size: 15px;
+  }
+
+  .menu-veh .ic {
+    width: 32px;
+    height: 32px;
+  }
+
+  .menu-veh [aria-current='page'] {
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+
+  .menu-veh [aria-current='page'] .ic {
+    background: none;
+  }
+
+  .menu-veh .badge {
+    top: -2px;
+    right: -6px;
+    box-shadow: none;
+  }
+
+  .vehiculo > .bottombar {
+    bottom: 0;
+    width: min(100%, 480px);
+    margin-left: auto;
+    background: none;
+  }
+
+  .vehiculo .sec {
+    max-width: 760px;
+  }
+
+  .vehiculo.editor .sec {
+    max-width: none;
+  }
+
+  .tab-diagnostico .sec > .btn.block {
+    width: auto;
+    align-self: flex-start;
   }
 
   /* Hojas: al centro de la pantalla */

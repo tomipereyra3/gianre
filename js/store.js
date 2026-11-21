@@ -502,49 +502,66 @@ export const vacio = (d) => !d.items.some((i) => i.texto.trim()) && !(d.nota || 
 
 export const ultimaActividad = (auto) => diagsDe(auto.id)[0]?.fecha ?? auto.creado;
 
-export const ultimoKm = (autoId) => diagsDe(autoId).find((d) => d.km)?.km ?? null;
+// El último kilometraje conocido: el de un diagnóstico o el de un arreglo, el más nuevo.
+export function ultimoKm(autoId) {
+  let km = null;
+  let cuando = -Infinity;
+  for (const d of diagsDe(autoId)) {
+    if (d.km && d.fecha > cuando) [km, cuando] = [d.km, d.fecha];
+    for (const it of d.items) {
+      if (it.resultadoKm && (it.resultadoFecha || 0) > cuando) [km, cuando] = [it.resultadoKm, it.resultadoFecha || 0];
+    }
+  }
+  return km;
+}
 
 export const nombreAuto = (a) => [a.modelo, a.anio].filter(Boolean).join(' ');
 
-// Lo que hay que resolver de un diagnóstico (lo que está "Bien" no lleva trabajo).
+// Lo que hay que resolver de un diagnóstico (lo que está en buen estado no lleva trabajo).
 export const aResolver = (d) => d.items.filter((i) => i.estado !== 'bien' && i.texto.trim());
+// Cada arreglo está hecho o pendiente. Los "para después" y "no quiso" de antes cuentan como pendientes.
 export const hecho = (i) => i.resultado === 'hecho';
-
-// Lo que quedó sin hacer en la última visita (sin decidir, para después o no quiso):
-// se ofrece sumarlo a la próxima.
-export function pendientes(autoId, excluirId) {
-  const diag = diagsDe(autoId).find((d) => d.id !== excluirId && !vacio(d));
-  if (!diag) return { diag: null, items: [] };
-  return { diag, items: aResolver(diag).filter((i) => !hecho(i)) };
-}
-
-// Cuántas fallas hay en cada resultado.
-export function resumen(items) {
-  const r = { hecho: 0, despues: 0, no: 0, sinDefinir: 0 };
-  for (const i of items) r[i.resultado || 'sinDefinir']++;
-  return r;
-}
-
-// ---------- Semáforo y trabajo realizado
 
 export const PRIORIDAD = { urgente: 0, pronto: 1, bien: 2 };
 export const porSemaforo = (items) => [...items].sort((x, y) => PRIORIDAD[x.estado] - PRIORIDAD[y.estado]);
 
-// Checklist del auto: lo que hay que resolver según el último diagnóstico, rojo primero.
-export function trabajos(autoId) {
-  const diag = diagsDe(autoId).find((d) => !vacio(d));
-  if (!diag) return { diag: null, items: [], cuenta: resumen([]) };
-  const items = porSemaforo(aResolver(diag));
-  return { diag, items, cuenta: resumen(items) };
+// Una falla vale por su anotación más nueva: si se volvió a anotar en otra visita
+// (por ejemplo, al sumar lo pendiente), cuenta la última y no se repite.
+function fallasDelAuto(autoId) {
+  const vistas = new Set();
+  const out = [];
+  for (const d of diagsDe(autoId)) {
+    for (const it of aResolver(d)) {
+      const k = fold(it.texto);
+      if (vistas.has(k)) continue;
+      vistas.add(k);
+      out.push({ it, diag: d });
+    }
+  }
+  return out;
 }
 
+// Lo que falta hacer en el vehículo, de todas las visitas: rojo primero, después lo más nuevo.
+export const pendientesAuto = (autoId) =>
+  fallasDelAuto(autoId)
+    .filter((x) => !hecho(x.it))
+    .sort((x, y) => PRIORIDAD[x.it.estado] - PRIORIDAD[y.it.estado] || y.diag.fecha - x.diag.fecha);
+
+// Todo lo que se arregló, con su fecha: lo más nuevo primero.
+export const hechosAuto = (autoId) =>
+  diagsDe(autoId)
+    .flatMap((d) => aResolver(d).filter(hecho).map((it) => ({ it, diag: d })))
+    .sort((x, y) => (y.it.resultadoFecha || 0) - (x.it.resultadoFecha || 0));
+
+// Lo arreglado en los últimos días: es lo que va en el resumen que se le manda al cliente.
+export const hechosRecientes = (autoId, dias = 30) =>
+  hechosAuto(autoId).filter((x) => (x.it.resultadoFecha || 0) >= Date.now() - dias * 864e5);
+
 // Rojo: queda algo urgente sin hacer. Amarillo: queda algo. Verde: al día.
-// Lo que el cliente no quiso hacer sigue contando: el auto tiene la falla igual.
 export function semaforo(autoId) {
-  const { diag, items } = trabajos(autoId);
-  if (!diag) return null;
-  const faltan = items.filter((i) => !hecho(i));
-  const color = faltan.some((i) => i.estado === 'urgente') ? 'urgente' : faltan.length ? 'pronto' : 'bien';
+  if (!diagsDe(autoId).some((d) => !vacio(d))) return null;
+  const faltan = pendientesAuto(autoId);
+  const color = faltan.some((x) => x.it.estado === 'urgente') ? 'urgente' : faltan.length ? 'pronto' : 'bien';
   return { color, faltan: faltan.length };
 }
 

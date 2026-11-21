@@ -23,10 +23,11 @@ const PRIO = {
   pronto: { label: 'Pronto', dot: '#FFA43B', bg: 'rgba(255,164,59,0.16)', text: '#FFB862' },
   bien: { label: 'Buen estado', dot: '#43D17F', bg: 'rgba(67,209,127,0.16)', text: '#6FDC9C' },
 };
-const NO_SE_HIZO = { dot: '#8C8C86', bg: 'rgba(255,255,255,0.08)', text: '#C9C9C2' };
 
 const ORDEN = { urgente: 0, pronto: 1, bien: 2 };
 const porPrioridad = (items) => [...items].sort((x, y) => ORDEN[x.estado] - ORDEN[y.estado]);
+const fechaCorta = (ts) =>
+  new Intl.DateTimeFormat('es-AR', { day: 'numeric', month: 'short' }).format(new Date(ts)).replace(/\./g, '');
 const ultimoHecho = (diag) => Math.max(0, ...diag.items.map((i) => i.resultadoFecha || 0)) || Date.now();
 
 const SANS = 'Urbanist, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
@@ -405,12 +406,11 @@ function tarjetaVehiculo(ctx, { ancho: an, k, auto, cliente, diag }) {
 // Qué suma cada parte. Diagnóstico: urgente y pronto. Trabajo: lo hecho, lo que queda y lo que no se hizo.
 function cuentas(trabajo, vivos, aResolver) {
   if (trabajo) {
-    const renglones = [];
-    const queda = suma(aResolver.filter((i) => !i.resultado || i.resultado === 'despues'));
-    const no = suma(aResolver.filter((i) => i.resultado === 'no'));
+    const hechos = aResolver.filter((i) => i.resultado === 'hecho');
+    const queda = suma(aResolver.filter((i) => i.resultado !== 'hecho'));
+    const renglones = [[hechos.length === 1 ? '1 arreglo hecho' : `${hechos.length} arreglos hechos`, suma(hechos), PRIO.bien.dot]];
     if (queda) renglones.push(['Queda pendiente', queda, PRIO.pronto.dot]);
-    if (no) renglones.push(['No se hizo', no, NO_SE_HIZO.dot]);
-    return { renglones, etiqueta: 'TOTAL DEL TRABAJO', total: suma(aResolver.filter((i) => i.resultado === 'hecho')) };
+    return { renglones, etiqueta: 'TOTAL A PAGAR', total: suma(hechos) };
   }
   const partes = ['urgente', 'pronto']
     .map((k) => [PRIO[k].label, suma(vivos.filter((i) => i.estado === k)), PRIO[k].dot])
@@ -437,8 +437,48 @@ function bloqueTotales(ctx, { ancho: an, k, renglones, etiqueta, total }) {
       rr(ctx, x, ty, an, h, 14 * k);
       ctx.fillStyle = C.acento;
       ctx.fill();
-      texto(ctx, etiqueta, x + 16 * k, ty + h / 2 + 0.5 * k, f(800, 9 * k), C.oscuro, 'left', 1.5 * k, 'middle');
+      const wE = ancho(ctx, etiqueta, f(800, 9 * k), 1.5 * k);
+      const wT = ancho(ctx, fmtPrecio(total), f(800, 24 * k));
+      const partida = wE + wT + 44 * k > an && etiqueta.includes(' ');
+      const lineas = partida ? [etiqueta.slice(0, etiqueta.lastIndexOf(' ')), etiqueta.slice(etiqueta.lastIndexOf(' ') + 1)] : [etiqueta];
+      lineas.forEach((l, i) =>
+        texto(ctx, l, x + 16 * k, ty + h / 2 + 0.5 * k + (i - (lineas.length - 1) / 2) * 12 * k, f(800, 9 * k), C.oscuro, 'left', 1.5 * k, 'middle'),
+      );
       texto(ctx, fmtPrecio(total), x + an - 16 * k, ty + h / 2 + 0.5 * k, f(800, 24 * k), C.oscuro, 'right', 0, 'middle');
+    },
+  };
+}
+
+function bloquePendientes(ctx, { ancho: an, k, items }) {
+  const pad = 14 * k;
+  const fs = 11.5 * k;
+  const lh = 15 * k;
+  const filas = items.map((it) => {
+    const precio = it.precio ? fmtPrecio(it.precio) : '';
+    const wp = precio ? ancho(ctx, precio, f(600, fs)) + 12 * k : 0;
+    ctx.font = f(500, fs);
+    return { it, precio, lineas: wrap(ctx, it.texto.trim(), an - 2 * pad - 14 * k - wp) };
+  });
+  const altoFilas = filas.reduce((s, x) => s + x.lineas.length * lh, 0) + filas.length * 8 * k;
+  const alto = 2 * pad + 7.5 * k + 12 * k + altoFilas + 16 * k;
+  return {
+    alto,
+    dibujar(x, y) {
+      rr(ctx, x, y, an, alto, 12 * k);
+      ctx.fillStyle = C.tarjeta;
+      ctx.fill();
+      ctx.lineWidth = 1.2 * k;
+      ctx.strokeStyle = 'rgba(255,164,59,0.45)';
+      ctx.stroke();
+      texto(ctx, 'QUEDA PENDIENTE', x + pad, y + pad, f(800, 7.5 * k), PRIO.pronto.text, 'left', 1.3 * k);
+      let ty = y + pad + 7.5 * k + 12 * k;
+      for (const fila of filas) {
+        punto(ctx, x + pad + 4 * k, ty + lh / 2, 3.5 * k, (PRIO[fila.it.estado] || PRIO.pronto).dot);
+        fila.lineas.forEach((l, i) => texto(ctx, l, x + pad + 14 * k, ty + i * lh + lh / 2, f(500, fs), C.texto, 'left', 0, 'middle'));
+        if (fila.precio) texto(ctx, fila.precio, x + an - pad, ty + lh / 2, f(600, fs), C.texto, 'right', 0, 'middle');
+        ty += fila.lineas.length * lh + 8 * k;
+      }
+      texto(ctx, 'Te lo recomendamos para la próxima visita.', x + pad, ty + 2 * k, f(500, 9.5 * k), C.gris);
     },
   };
 }
@@ -484,11 +524,13 @@ function preparar({ diag, modo = 'diagnostico' }) {
     trabajo,
     vivos,
     aResolver,
+    hechos: aResolver.filter((i) => i.resultado === 'hecho').sort((x, y) => (x.resultadoFecha || 0) - (y.resultadoFecha || 0)),
+    pendientes: aResolver.filter((i) => i.resultado !== 'hecho'),
     enBuenEstado: trabajo ? [] : vivos.filter((i) => i.estado === 'bien'),
     nota: trabajo ? '' : (diag.nota || '').trim(),
     precios,
     titulo: trabajo ? 'Trabajo realizado' : precios ? 'Presupuesto' : 'Diagnóstico',
-    fecha: fmtFechaLarga(trabajo ? ultimoHecho(diag) : diag.fecha),
+    fecha: trabajo ? `Entregado el ${fmtFechaLarga(ultimoHecho(diag))}` : fmtFechaLarga(diag.fecha),
   };
 }
 
@@ -508,11 +550,7 @@ function pintarImagen(ctx, datos) {
   let y = encabezado(ctx, { x: IM, y: IM, ancho: an, k: IK, angosto: true, taller, logo, titulo: p.titulo, fecha: p.fecha, auto, cliente, diag });
 
   const grupos = p.trabajo
-    ? [
-        { label: 'Hecho', p: PRIO.bien, tilde: true, items: p.aResolver.filter((i) => i.resultado === 'hecho') },
-        { label: 'Queda pendiente', p: PRIO.pronto, porItem: true, items: p.aResolver.filter((i) => !i.resultado || i.resultado === 'despues') },
-        { label: 'No se hizo', p: NO_SE_HIZO, porItem: true, apagado: true, items: p.aResolver.filter((i) => i.resultado === 'no') },
-      ]
+    ? [{ label: 'Arreglos hechos', p: PRIO.bien, tilde: true, items: p.hechos }]
     : ['urgente', 'pronto'].map((k) => ({ label: PRIO[k].label, p: PRIO[k], items: p.aResolver.filter((i) => i.estado === k) }));
 
   const fs = 18.5;
@@ -531,6 +569,11 @@ function pintarImagen(ctx, datos) {
       lineas.forEach((l, i) => texto(ctx, l, IM + 24, y + 1 + i * lh, f(500, fs), g.apagado ? C.suave : C.texto));
       if (precio) texto(ctx, precio, IM + an, y + 1, f(700, fs), g.apagado ? C.suave : C.texto, 'right');
       y += lineas.length * lh;
+      if (g.tilde && it.resultadoFecha) {
+        const sub = [fechaCorta(it.resultadoFecha), it.resultadoKm ? `${fmtKm(it.resultadoKm)} km` : null].filter(Boolean).join(' · ');
+        texto(ctx, sub, IM + 24, y + 3, f(500, 14), C.gris);
+        y += 21;
+      }
       if (idx < g.items.length - 1) {
         y += 11;
         ctx.fillStyle = C.linea;
@@ -543,6 +586,7 @@ function pintarImagen(ctx, datos) {
 
   const bloques = [];
   if (p.precios) bloques.push(bloqueTotales(ctx, { ancho: an, k: IK, ...cuentas(p.trabajo, p.vivos, p.aResolver) }));
+  if (p.trabajo && p.pendientes.length) bloques.push(bloquePendientes(ctx, { ancho: an, k: IK, items: p.pendientes }));
   if (p.enBuenEstado.length) bloques.push(bloqueBuenEstado(ctx, { ancho: an, k: IK, items: p.enBuenEstado }));
   if (p.nota) bloques.push(bloqueNota(ctx, { ancho: an, k: IK, nota: p.nota }));
   for (const b of bloques) {
@@ -594,12 +638,12 @@ export function dibujarPDF(datos) {
   let y;
 
   // Columnas de la tabla
+  // En el resumen de lo arreglado: tilde, fecha, arreglo e importe.
   const colPrio = M + 14;
-  const colDet = M + 14 + 96;
+  const colFecha = M + 14 + 30;
+  const colDet = p.trabajo ? M + 14 + 30 + 66 : M + 14 + 96;
   const anchoImporte = p.precios ? 90 : 0;
-  const anchoEstado = p.trabajo ? 80 : 0;
-  const finDet = A4.w - M - 14 - anchoImporte - anchoEstado - (anchoImporte || anchoEstado ? 12 : 0);
-  const colEstado = A4.w - M - 14 - anchoImporte - anchoEstado;
+  const finDet = A4.w - M - 14 - anchoImporte - (anchoImporte ? 12 : 0);
 
   function nuevaPagina() {
     const cv = document.createElement('canvas');
@@ -637,19 +681,11 @@ export function dibujarPDF(datos) {
     ctx.fill();
     const ly = y + 15.5;
     const E = (t, x, al = 'left') => texto(ctx, t, x, ly, f(800, 7.5), C.suave, al, 1.3, 'middle');
-    E('PRIORIDAD', colPrio);
-    E(p.trabajo ? 'TRABAJO' : 'FALLA DETECTADA', colDet);
-    if (p.trabajo) E('ESTADO', colEstado);
+    if (p.trabajo) E('FECHA', colFecha);
+    else E('PRIORIDAD', colPrio);
+    E(p.trabajo ? 'ARREGLO HECHO' : 'FALLA DETECTADA', colDet);
     if (p.precios) E('IMPORTE', A4.w - M - 14, 'right');
     y += 30;
-  }
-
-  function estadoTrabajo(it, x, cy) {
-    if (it.resultado === 'hecho') {
-      tilde(ctx, x, cy - 4.2, 8.5, PRIO.bien.dot);
-      texto(ctx, 'Hecho', x + 13, cy, f(700, 9.5), PRIO.bien.text, 'left', 0, 'middle');
-    } else if (it.resultado === 'no') texto(ctx, 'No se hizo', x, cy, f(600, 9.5), C.suave, 'left', 0, 'middle');
-    else texto(ctx, 'Pendiente', x, cy, f(600, 9.5), PRIO.pronto.text, 'left', 0, 'middle');
   }
 
   function fila(it) {
@@ -660,12 +696,27 @@ export function dibujarPDF(datos) {
     if (asegurar(alto)) encabezadoTabla();
     const s = PRIO[it.estado];
     pildora(ctx, colPrio, y + 12.5, s, s.label, 8.5);
-    const apagado = p.trabajo && it.resultado === 'no';
-    lineas.forEach((l, i) => texto(ctx, l, colDet, y + 14 + i * lh, f(500, 12), apagado ? C.suave : C.texto));
-    if (p.trabajo) estadoTrabajo(it, colEstado, y + 22);
-    if (p.precios && it.precio) {
-      texto(ctx, fmtPrecio(it.precio), A4.w - M - 14, y + 14, f(700, 12), apagado ? C.suave : C.texto, 'right');
-    }
+    lineas.forEach((l, i) => texto(ctx, l, colDet, y + 14 + i * lh, f(500, 12), C.texto));
+    if (p.precios && it.precio) texto(ctx, fmtPrecio(it.precio), A4.w - M - 14, y + 14, f(700, 12), C.texto, 'right');
+    y += alto;
+    ctx.fillStyle = C.linea;
+    ctx.fillRect(M, y - 0.75, an, 0.75);
+  }
+
+  // Un arreglo hecho: tilde verde, fecha, detalle con el kilometraje e importe.
+  function filaHecho(it) {
+    ctx.font = f(500, 12);
+    const lineas = wrap(ctx, it.texto.trim(), finDet - colDet);
+    const lh = 15.5;
+    const km = it.resultadoKm ? `${fmtKm(it.resultadoKm)} km` : '';
+    const alto = Math.max(46, lineas.length * lh + (km ? 14 : 0) + 27);
+    if (asegurar(alto)) encabezadoTabla();
+    punto(ctx, colPrio + 9, y + 22, 9, PRIO.bien.dot);
+    tilde(ctx, colPrio + 4.5, y + 18, 9, C.fondo);
+    if (it.resultadoFecha) texto(ctx, fechaCorta(it.resultadoFecha), colFecha, y + 15, f(500, 10.5), C.gris);
+    lineas.forEach((l, i) => texto(ctx, l, colDet, y + 14 + i * lh, f(600, 12), C.texto));
+    if (km) texto(ctx, km, colDet, y + 14 + lineas.length * lh + 1, f(500, 9.5), C.suave);
+    if (p.precios && it.precio) texto(ctx, fmtPrecio(it.precio), A4.w - M - 14, y + 14, f(700, 12), C.texto, 'right');
     y += alto;
     ctx.fillStyle = C.linea;
     ctx.fillRect(M, y - 0.75, an, 0.75);
@@ -676,6 +727,7 @@ export function dibujarPDF(datos) {
     const anchoDer = p.precios ? 230 : 0;
     const anchoIzq = anchoDer ? an - anchoDer - 26 : an;
     const izq = [];
+    if (p.trabajo && p.pendientes.length) izq.push(bloquePendientes(ctx, { ancho: anchoIzq, k: 1, items: p.pendientes }));
     if (p.enBuenEstado.length) izq.push(bloqueBuenEstado(ctx, { ancho: anchoIzq, k: 1, items: p.enBuenEstado }));
     if (p.nota) izq.push(bloqueNota(ctx, { ancho: anchoIzq, k: 1, nota: p.nota }));
     const der = anchoDer ? bloqueTotales(ctx, { ancho: anchoDer, k: 1, ...cuentas(p.trabajo, p.vivos, p.aResolver) }) : null;
@@ -721,9 +773,10 @@ export function dibujarPDF(datos) {
 
   nuevaPagina();
   y = encabezado(ctx, { x: M, y, ancho: an, k: 1, angosto: false, taller, logo, titulo: p.titulo, fecha: p.fecha, auto, cliente, diag });
-  if (p.aResolver.length) {
+  const filasTabla = p.trabajo ? p.hechos : p.aResolver;
+  if (filasTabla.length) {
     encabezadoTabla();
-    p.aResolver.forEach(fila);
+    filasTabla.forEach(p.trabajo ? filaHecho : fila);
   }
   cierre();
   pies();

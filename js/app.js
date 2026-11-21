@@ -41,9 +41,9 @@ function refrescarListas() {
 const rutas = [
   [/^\/$/, inicio],
   [/^\/nuevo$/, nuevo],
-  [/^\/auto\/(\w+)$/, fichaAuto],
+  [/^\/auto\/(\w+)(?:\/(diagnostico|reparacion|historial))?(?:\/(\w+))?$/, vehiculo],
   [/^\/cliente\/(\w+)$/, fichaCliente],
-  [/^\/diag\/(\w+)$/, editor],
+  [/^\/diag\/(\w+)$/, (id) => S.getDiag(id) && vehiculo(S.getDiag(id).autoId, 'diagnostico', id)],
   [/^\/ajustes$/, ajustes],
 ];
 
@@ -277,15 +277,12 @@ function pillSemaforo(luz, cls = '') {
 
 const mayusculas = (t) => t.trim().replace(/(^|\s)(\p{L})/gu, (_, s, l) => s + l.toUpperCase());
 
-// Tarjeta de un auto: patente, modelo y cliente, semáforo y plata que queda.
+// Tarjeta de un auto: patente, modelo y cliente, semáforo y plata que queda por hacer.
 function filaAuto(a, c, cuando, onclick, cls = '') {
   const luz = S.semaforo(a.id);
-  const trab = S.trabajos(a.id);
   const principal = S.nombreAuto(a) || c?.nombre;
   const sub = principal ? [S.nombreAuto(a) ? c?.nombre : null, cuando].filter(Boolean).join(' · ') : '';
-  const queda = S.suma(trab.items.filter((i) => !S.hecho(i)));
-  const cobrado = S.suma(trab.items.filter(S.hecho));
-  const n = trab.items.length;
+  const queda = S.suma(S.pendientesAuto(a.id).map((x) => x.it));
   return h(
     'button',
     { class: `auto ${cls}`, type: 'button', 'data-estado': luz?.color, onclick: onclick || (() => go('/auto/' + a.id)) },
@@ -293,10 +290,7 @@ function filaAuto(a, c, cuando, onclick, cls = '') {
     h('span', { class: 'auto-titulo' }, principal || cuando.charAt(0).toUpperCase() + cuando.slice(1)),
     sub ? h('span', { class: 'auto-sub' }, sub) : null,
     luz ? pillSemaforo(luz) : null,
-    queda || cobrado
-      ? h('span', { class: 'auto-monto' }, S.fmtPrecio(queda || cobrado), h('small', null, queda ? ' pendiente' : ' cobrado'))
-      : null,
-    n ? h('span', { class: 'auto-prog' }, trab.cuenta.hecho === n ? 'Todos los trabajos hechos' : `${trab.cuenta.hecho} de ${n} trabajos hechos`) : null,
+    queda ? h('span', { class: 'auto-monto' }, S.fmtPrecio(queda), h('small', null, ' pendiente')) : null,
     h('span', { class: 'auto-go', 'aria-hidden': 'true' }, icon('arrow')),
   );
 }
@@ -836,7 +830,7 @@ function nuevo() {
 
   function empezarCon(a) {
     const d = S.nuevoDiag(a.id);
-    go('/diag/' + d.id, { replace: true });
+    go(`/auto/${a.id}/diagnostico/${d.id}`, { replace: true });
   }
 
   function crear() {
@@ -878,12 +872,9 @@ function nuevo() {
 }
 
 // ---------- Diagnóstico: se escribe como un mensaje de WhatsApp, una falla por renglón
+// Vive dentro de la sección "Diagnóstico" del vehículo.
 
-function editor(id) {
-  const d = S.getDiag(id);
-  const a = d && S.getAuto(d.autoId);
-  if (!a) return null;
-  const c = S.getCliente(a.clienteId);
+function editorPartes(d, a) {
   refrescarListas();
   salir = () => {
     confirmar();
@@ -957,7 +948,7 @@ function editor(id) {
       }),
     );
     enterPasaA(txt, () => txt.blur());
-    // La prioridad cambia con un toque: Pronto → Urgente → Bien.
+    // La prioridad cambia con un toque: Pronto → Urgente → Buen estado.
     const chip = h(
       'button',
       {
@@ -1004,12 +995,12 @@ function editor(id) {
         { class: 'item-cuerpo' },
         txt,
         h('label', { class: 'precio-fila' }, h('span', null, '$'), precio),
-        // En el historial se ve qué pasó con cada falla.
-        it.resultado
+        // Lo que ya se arregló lo dice acá también.
+        S.hecho(it)
           ? h(
               'span',
-              { class: `res-tag res-${it.resultado}` },
-              `${S.RESULTADO_LABEL[it.resultado]}${it.resultadoFecha ? ` · ${S.fmtFecha(it.resultadoFecha)}` : ''}`,
+              { class: 'res-tag res-hecho' },
+              `Hecho${it.resultadoFecha ? ` el ${S.fmtFecha(it.resultadoFecha)}` : ''}${it.resultadoKm ? ` · ${S.fmtKm(it.resultadoKm)} km` : ''}`,
             )
           : null,
       ),
@@ -1060,28 +1051,23 @@ function editor(id) {
 
   for (const it of S.porSemaforo(d.items)) lista.append(filaItem(it));
 
-  // Lo que quedó pendiente de la visita anterior, a un toque.
-  const anterior = S.pendientes(a.id, d.id);
+  // Lo que quedó pendiente de visitas anteriores, a un toque.
   const bannerBox = h('div');
   function mostrarBanner() {
-    const faltan = anterior.items.filter((p) => !d.items.some((i) => S.fold(i.texto) === S.fold(p.texto)));
-    const ver = anterior.diag && anterior.diag.fecha < d.fecha && !d.arrastrado && !d.enviado && faltan.length;
+    const faltan = S.pendientesAuto(a.id)
+      .filter((x) => x.diag.id !== d.id && x.diag.fecha < d.fecha)
+      .map((x) => x.it)
+      .filter((p) => !d.items.some((i) => S.fold(i.texto) === S.fold(p.texto)));
     fill(
       bannerBox,
-      ver
+      faltan.length && !d.enviado
         ? h(
             'div',
             { class: 'banner' },
             h(
               'div',
               { class: 'banner-text' },
-              h(
-                'b',
-                null,
-                faltan.length === 1
-                  ? '1 trabajo pendiente de la visita anterior'
-                  : `${faltan.length} trabajos pendientes de la visita anterior`,
-              ),
+              h('b', null, faltan.length === 1 ? '1 pendiente de visitas anteriores' : `${faltan.length} pendientes de visitas anteriores`),
               h('span', null, faltan.map((i) => i.texto.trim()).join(', ')),
             ),
             h(
@@ -1090,11 +1076,10 @@ function editor(id) {
                 class: 'btn btn-sm',
                 type: 'button',
                 onclick: () => {
-                  d.arrastrado = true;
                   for (const p of faltan) agregar(p.texto.trim(), p.estado, p.precio || null);
                 },
               },
-              'Agregar',
+              'Sumar',
             ),
           )
         : null,
@@ -1117,13 +1102,7 @@ function editor(id) {
     },
   });
   enterPasaA(km, () => km.blur());
-  const kmBox = h(
-    'label',
-    { class: 'km', hidden: !d.km },
-    h('span', null, 'Kilometraje'),
-    km,
-    h('span', { class: 'unit' }, 'km'),
-  );
+  const kmBox = h('label', { class: 'km', hidden: !d.km }, h('span', null, 'Kilometraje'), km, h('span', { class: 'unit' }, 'km'));
 
   const nota = autosize(
     h('textarea', {
@@ -1165,7 +1144,7 @@ function editor(id) {
       const deshacer = S.borrarDiag(d.id);
       S.save();
       salir = null;
-      volver('/auto/' + a.id);
+      go(`/auto/${a.id}/historial`, { replace: true });
       if (tenia)
         snack('Diagnóstico eliminado', 'Deshacer', () => {
           deshacer();
@@ -1219,7 +1198,7 @@ function editor(id) {
           'button',
           { class: 'btn btn-primary', type: 'button', onclick: () => enviar(d, enCelu ? 'png' : formatoPrevia) },
           icon('wa'),
-          'Enviar por WhatsApp',
+          d.enviado ? 'Enviar de nuevo' : conPrecios ? 'Enviar presupuesto' : 'Enviar diagnóstico',
         ),
       ),
     );
@@ -1262,7 +1241,7 @@ function editor(id) {
     if (conPrecios) return;
     conPrecios = d.precios = true;
     guardar();
-    pantalla.classList.add('con-precios');
+    cuerpo.classList.add('con-precios');
     btnPrecios.hidden = true;
     sumar();
   }
@@ -1284,55 +1263,61 @@ function editor(id) {
   // Diagnóstico nuevo: el teclado ya abierto, listo para escribir.
   if (!d.items.length) enfocar = nuevoItem;
 
-  const nombre = S.nombreAuto(a);
-  const pantalla = h(
+  // Arriba: cuál es (el de hoy o uno anterior) y si ya se le mandó al cliente.
+  const ultimo = S.diagsDe(a.id)[0];
+  const esHoy = S.isoLocal(d.fecha) === S.isoLocal(Date.now());
+  const crearNuevo = () => {
+    const nd = S.nuevoDiag(a.id);
+    go(`/auto/${a.id}/diagnostico/${nd.id}`, { replace: true });
+  };
+  const cabeza = h(
     'div',
-    { class: `screen editor${conPrecios ? ' con-precios' : ''}` },
-    bar(
-      backBtn('/auto/' + a.id),
-      h('div', { class: 'bar-centro' }, identidad(a, c, 'sm')),
-      iconBtn('trash', 'Eliminar diagnóstico', eliminar, 'peligro'),
-    ),
+    { class: 'sec' },
     h(
       'div',
-      { class: 'editor-titulo' },
-      h('h1', null, nombre || c?.nombre || 'Diagnóstico'),
-      h(
-        'p',
-        { class: 'editor-sub' },
-        h('span', null, [`Diagnóstico del ${S.fmtFecha(d.fecha)}`, nombre ? c?.nombre : null].filter(Boolean).join(' · ')),
-        marcaGuardado,
-      ),
-    ),
-    h(
-      'div',
-      { class: 'editor-cols' },
+      { class: 'sec-head' },
       h(
         'div',
-        { class: 'editor-main' },
-        bannerBox,
-        h(
-          'section',
-          { class: 'lista-fallas', 'aria-label': 'Fallas' },
-          lista,
-          h('label', { class: 'add' }, h('span', { class: 'plus' }, icon('add')), nuevoItem),
-        ),
-        h('div', { class: 'extras' }, btnPrecios, extra('Agregar kilometraje', kmBox, km), extra('Agregar nota', notaBox, nota)),
-        kmBox,
-        notaBox,
+        { class: 'sec-tit' },
+        h('h2', null, esHoy ? 'Diagnóstico de hoy' : `Diagnóstico del ${S.fmtFecha(d.fecha)}`),
+        h('small', null, h('span', null, S.fmtFecha(d.fecha, true)), marcaGuardado),
       ),
-      h(
-        'aside',
-        { class: 'previa', 'aria-label': 'Vista previa' },
-        h('div', { class: 'previa-head' }, h('h2', null, 'Vista previa para el cliente'), previaOpciones),
-        previaHojas,
-        tarjetaEnvio(false),
-      ),
+      h('span', { class: `estado-diag${d.enviado ? ' enviado' : ''}` }, d.enviado ? `Enviado el ${S.fmtFecha(d.enviado)}` : 'Sin enviar'),
     ),
-    h('div', { class: 'bottombar' }, tarjetaEnvio(true)),
+    d.enviado || ultimo !== d
+      ? h('button', { class: 'btn btn-gris block', type: 'button', onclick: crearNuevo }, icon('add'), 'Crear diagnóstico nuevo')
+      : null,
   );
+
+  const cuerpo = h(
+    'div',
+    { class: `editor-cols${conPrecios ? ' con-precios' : ''}` },
+    h(
+      'div',
+      { class: 'editor-main' },
+      bannerBox,
+      h(
+        'section',
+        { class: 'lista-fallas', 'aria-label': 'Fallas' },
+        lista,
+        h('label', { class: 'add' }, h('span', { class: 'plus' }, icon('add')), nuevoItem),
+      ),
+      h('div', { class: 'extras' }, btnPrecios, extra('Agregar kilometraje', kmBox, km), extra('Agregar nota', notaBox, nota)),
+      kmBox,
+      notaBox,
+      h('div', { class: 'sec-pie' }, h('button', { class: 'btn-text danger', type: 'button', onclick: eliminar }, 'Eliminar este diagnóstico')),
+    ),
+    h(
+      'aside',
+      { class: 'previa', 'aria-label': 'Vista previa' },
+      h('div', { class: 'previa-head' }, h('h2', null, 'Vista previa para el cliente'), previaOpciones),
+      previaHojas,
+      tarjetaEnvio(false),
+    ),
+  );
+  const abajo = tarjetaEnvio(true);
   sumar();
-  return pantalla;
+  return { cuerpo: [cabeza, cuerpo], abajo, clase: 'editor' };
 }
 
 // ---------- Envío
@@ -1485,273 +1470,491 @@ function verPrevia(d) {
   );
 }
 
-// ---------- Ficha del auto
+// ---------- Vehículo: tres secciones con el menú de abajo
+// Diagnóstico (fallas y presupuesto) → Reparación (marcar lo hecho) → Historial (todo lo hecho y lo que falta).
 
-function fichaAuto(id) {
+function vehiculo(id, tab, diagId) {
   const a = S.getAuto(id);
   if (!a) return null;
   const c = S.getCliente(a.clienteId);
-  const trab = S.trabajos(a.id);
-  const diags = S.diagsDe(a.id).filter((d) => !S.vacio(d));
-  const km = S.ultimoKm(a.id);
-  const luz = S.semaforo(a.id);
-  const wa = S.waNumber(c?.telefono);
-  const tel = (c?.telefono || '').replace(/[^\d+]/g, '');
-  const nombre = S.nombreAuto(a);
-  const n = trab.items.length;
-  // Si no cargaron el año, se estima por la patente (con un toque se confirma).
-  const anioAprox = !a.anio && a.patente ? S.anioPorPatente(a.patente) : null;
-
-  const nuevoDiag = () => {
-    const d = S.nuevoDiag(a.id);
-    go('/diag/' + d.id);
-  };
-
-  // Kilometraje, visitas y cuántos trabajos se hicieron: solo lo que hay.
-  const stats = [
-    km ? ['speed', 'Kilometraje', S.fmtKm(km), ''] : null,
-    diags.length ? ['history', diags.length === 1 ? 'Visita' : 'Visitas', diags.length, ''] : null,
-    n ? ['done', 'Trabajos hechos', `${trab.cuenta.hecho} de ${n}`, trab.cuenta.hecho === n ? 'ok' : ''] : null,
-  ].filter(Boolean);
-
-  const cliente = c
-    ? h(
-        'div',
-        { class: 'cliente-card' },
-        h(
-          'button',
-          { class: 'cliente-info', type: 'button', onclick: () => go('/cliente/' + c.id) },
-          h('small', null, 'Cliente'),
-          h('b', null, c.nombre || 'Cliente sin nombre'),
-          c.telefono ? h('span', null, c.telefono) : null,
-        ),
-        wa
-          ? h(
-              'a',
-              {
-                class: 'btn-circulo chico wa',
-                href: `https://wa.me/${wa}`,
-                target: '_blank',
-                rel: 'noopener',
-                'aria-label': 'Abrir chat de WhatsApp',
-                title: 'Abrir chat de WhatsApp',
-              },
-              icon('wa'),
-            )
-          : null,
-        tel ? h('a', { class: 'btn-circulo chico', href: `tel:${tel}`, 'aria-label': 'Llamar al cliente', title: 'Llamar al cliente' }, icon('phone')) : null,
-      )
-    : h(
-        'button',
-        { class: 'cliente-card falta', type: 'button', onclick: () => asignarCliente(a) },
-        h('span', { class: 'btn-circulo' }, icon('add')),
-        'Agregar cliente',
-      );
-
-  // Abajo: si ya marcaron algo, se manda el trabajo realizado; si no, se arranca otro diagnóstico.
-  const resueltos = trab.cuenta.hecho || trab.cuenta.despues || trab.cuenta.no;
-  const abajo = resueltos
-    ? h(
-        'div',
-        { class: 'envio' },
-        totalesTrabajo(trab.items),
-        h(
-          'div',
-          { class: 'envio-botones' },
-          h(
-            'button',
-            { class: 'btn-circulo', type: 'button', 'aria-label': 'Crear diagnóstico', title: 'Crear diagnóstico', onclick: nuevoDiag },
-            icon('add'),
-          ),
-          h(
-            'button',
-            { class: 'btn btn-primary', type: 'button', onclick: () => enviar(trab.diag, 'png', 'trabajo') },
-            icon('wa'),
-            'Enviar trabajo realizado',
-          ),
-        ),
-      )
-    : h(
-        'div',
-        { class: 'envio solo' },
-        h('div', { class: 'envio-botones' }, h('button', { class: 'btn btn-primary', type: 'button', onclick: nuevoDiag }, icon('add'), 'Crear diagnóstico')),
-      );
-
+  const pend = S.pendientesAuto(a.id);
+  const diags = S.diagsDe(a.id);
+  const borrador = diags[0] && !diags[0].enviado && !S.vacio(diags[0]);
+  // Sin sección elegida: el borrador si hay uno, si no lo que falta hacer, si no el historial.
+  tab ||= borrador ? 'diagnostico' : pend.length ? 'reparacion' : diags.some((d) => !S.vacio(d)) ? 'historial' : 'diagnostico';
+  const partes =
+    tab === 'diagnostico' ? seccionDiagnostico(a, diagId) : tab === 'reparacion' ? seccionReparacion(a, pend) : seccionHistorial(a, pend);
+  if (!partes) return null;
   return h(
     'div',
-    { class: 'screen ficha' },
-    bar(backBtn('/'), barTitulo('Ficha del vehículo'), iconBtn('edit', 'Editar vehículo', () => editarAuto(a))),
-    h(
-      'div',
-      { class: 'ficha-cols' },
-      h(
-        'div',
-        { class: 'ficha-izq' },
-        h(
-          'section',
-          { class: 'hero-auto', 'data-estado': luz?.color },
-          a.patente
-            ? plate(a.patente, 'lg')
-            : h('button', { class: 'plate-falta', type: 'button', onclick: () => editarAuto(a) }, 'Agregar patente'),
-        ),
-        h(
-          'div',
-          { class: 'hero-linea' },
-          nombre
-            ? h('h1', null, nombre)
-            : h('button', { class: 'h1-falta', type: 'button', onclick: () => editarAuto(a) }, 'Agregar marca y modelo'),
-          luz ? pillSemaforo(luz, 'grande') : null,
-        ),
-        anioAprox
-          ? h(
-              'p',
-              { class: 'hero-anio' },
-              `Año aproximado: ${anioAprox}, según la patente`,
-              h(
-                'button',
-                {
-                  class: 'btn-text',
-                  type: 'button',
-                  onclick: () => {
-                    a.anio = String(anioAprox);
-                    S.save();
-                    refrescar();
-                    snack(`Año ${anioAprox} guardado`);
-                  },
-                },
-                'Confirmar año',
-              ),
-            )
-          : null,
-        stats.length
-          ? h(
-              'div',
-              { class: 'stats' },
-              stats.map(([ic, lbl, val, cls]) =>
-                h('div', { class: `stat ${cls}` }, h('span', { class: 'stat-ic' }, icon(ic)), h('span', { class: 'stat-lbl' }, lbl), h('b', null, val)),
-              ),
-            )
-          : null,
-        cliente,
-      ),
-      h(
-        'div',
-        { class: 'ficha-der' },
-        // Checklist punto por punto, rojo primero. Cada falla termina en
-        // Hecho, Después (queda para otra visita) o No quiso (el cliente no lo hizo).
-        n ? [titulo('Trabajos del último diagnóstico'), h('div', { class: 'trabajos' }, trab.items.map(filaTrabajo))] : null,
-        titulo('Historial clínico'),
-        diags.length ? h('div', { class: 'card' }, diags.map(filaHistorial)) : h('p', { class: 'none' }, 'Todavía no hay diagnósticos'),
-      ),
-    ),
-    h('div', { class: 'bottombar' }, abajo),
+    { class: `screen vehiculo tab-${tab} ${partes.clase || ''}` },
+    cabeceraVehiculo(a, c),
+    menuVehiculo(a, tab, pend.length),
+    partes.cuerpo,
+    partes.abajo ? h('div', { class: 'bottombar' }, partes.abajo) : null,
   );
 }
 
-function filaTrabajo(it) {
-  const marcar = (r) => {
-    // Tocar de nuevo el que ya está marcado lo deja sin definir.
-    it.resultado = it.resultado === r ? null : r;
-    it.resultadoFecha = it.resultado ? Date.now() : null;
+function cabeceraVehiculo(a, c) {
+  const nombre = S.nombreAuto(a);
+  const km = S.ultimoKm(a.id);
+  const wa = S.waNumber(c?.telefono);
+  return [
+    bar(
+      iconBtn('back', 'Volver a vehículos', () => volver('/')),
+      h('div', { class: 'bar-centro' }, identidad(a, c, 'sm')),
+      iconBtn('edit', 'Editar vehículo', () => editarAuto(a)),
+    ),
+    h(
+      'div',
+      { class: 'veh-datos' },
+      h(
+        'div',
+        { class: 'veh-texto' },
+        nombre
+          ? h('h1', null, nombre)
+          : h('button', { class: 'h1-falta', type: 'button', onclick: () => editarAuto(a) }, 'Agregar marca y modelo'),
+        h(
+          'p',
+          { class: 'veh-sub' },
+          c
+            ? h('button', { class: 'veh-cliente', type: 'button', onclick: () => go('/cliente/' + c.id) }, c.nombre || 'Cliente sin nombre')
+            : h('button', { class: 'veh-cliente', type: 'button', onclick: () => asignarCliente(a) }, 'Agregar cliente'),
+          km ? h('span', null, `· ${S.fmtKm(km)} km`) : null,
+        ),
+      ),
+      wa
+        ? h(
+            'a',
+            {
+              class: 'btn-circulo chico wa',
+              href: `https://wa.me/${wa}`,
+              target: '_blank',
+              rel: 'noopener',
+              'aria-label': 'Abrir chat de WhatsApp con el cliente',
+              title: 'Abrir chat de WhatsApp',
+            },
+            icon('wa'),
+          )
+        : null,
+    ),
+  ];
+}
+
+// El menú de abajo: siempre las mismas tres secciones.
+function menuVehiculo(a, tab, pendientes) {
+  const item = (k, ic, label) =>
+    h(
+      'button',
+      {
+        type: 'button',
+        'aria-current': tab === k ? 'page' : null,
+        onclick: () => tab !== k && go(`/auto/${a.id}/${k}`, { replace: true }),
+      },
+      h(
+        'span',
+        { class: 'ic' },
+        icon(ic),
+        k === 'reparacion' && pendientes
+          ? h('span', { class: 'badge', 'aria-label': pendientes === 1 ? '1 pendiente' : `${pendientes} pendientes` }, pendientes)
+          : null,
+      ),
+      label,
+    );
+  return h(
+    'nav',
+    { class: 'menu-veh', 'aria-label': 'Secciones del vehículo' },
+    item('diagnostico', 'clipboard', 'Diagnóstico'),
+    item('reparacion', 'wrench', 'Reparación'),
+    item('historial', 'history', 'Historial'),
+  );
+}
+
+function seccionDiagnostico(a, diagId) {
+  const d = diagId ? S.getDiag(diagId) : S.diagsDe(a.id)[0];
+  if (d && d.autoId === a.id) return editorPartes(d, a);
+  if (diagId) return null;
+  return {
+    cuerpo: h(
+      'div',
+      { class: 'sec vacio-sec' },
+      h('h2', null, 'Todavía no hay diagnósticos'),
+      h('p', null, 'Anotá las fallas que encontraste y mandale el presupuesto al cliente.'),
+      h(
+        'button',
+        {
+          class: 'btn btn-primary',
+          type: 'button',
+          onclick: () => {
+            const nd = S.nuevoDiag(a.id);
+            go(`/auto/${a.id}/diagnostico/${nd.id}`, { replace: true });
+          },
+        },
+        icon('add'),
+        'Crear diagnóstico',
+      ),
+    ),
+  };
+}
+
+// "de hoy", "del 19 nov" (la última visita) o "desde el 12 mar" (una visita anterior).
+function origen(diag, ultimo) {
+  if (S.isoLocal(diag.fecha) === S.isoLocal(Date.now())) return 'de hoy';
+  return diag === ultimo ? `del ${S.fmtFecha(diag.fecha)}` : `desde el ${S.fmtFecha(diag.fecha)}`;
+}
+
+const cuandoHecho = (it) =>
+  [S.isoLocal(it.resultadoFecha || 0) === S.isoLocal(Date.now()) ? 'Hoy' : S.fmtFecha(it.resultadoFecha), it.resultadoKm ? `${S.fmtKm(it.resultadoKm)} km` : null]
+    .filter(Boolean)
+    .join(' · ');
+
+function seccionReparacion(a, pend) {
+  const ultimo = S.diagsDe(a.id).find((d) => !S.vacio(d));
+  const recientes = S.hechosRecientes(a.id);
+  const falta = S.suma(pend.map((x) => x.it));
+  const cobrado = S.suma(recientes.map((x) => x.it));
+  const deshacer = (it) => {
+    it.resultado = null;
+    it.resultadoFecha = null;
+    it.resultadoKm = null;
     S.save();
     refrescar();
   };
-  const cuando = it.resultadoFecha ? ` · ${S.fmtFecha(it.resultadoFecha)}` : '';
-  return h(
+  const cuerpo = h(
     'div',
-    { class: `trabajo${it.resultado ? ` res-${it.resultado}` : ''}`, 'data-estado': it.estado },
+    { class: 'sec' },
     h(
       'div',
-      { class: 'trabajo-top' },
-      h('i', { class: 'dot' }),
-      h(
-        'span',
-        { class: 'row-main' },
-        h('span', { class: 'row-title wrap' }, it.texto.trim()),
-        h(
-          'span',
-          { class: 'row-sub estado' },
-          S.ESTADO_LABEL[it.estado],
-          it.resultado ? h('span', { class: 'res-texto' }, ` · ${S.RESULTADO_LABEL[it.resultado]}${cuando}`) : null,
-        ),
-      ),
-      it.precio ? h('span', { class: 'trabajo-precio' }, S.fmtPrecio(it.precio)) : null,
+      { class: 'sec-head' },
+      h('h2', null, 'Para hacer'),
+      pend.length ? h('small', null, [pend.length, falta ? S.fmtPrecio(falta) : null].filter(Boolean).join(' · ')) : null,
     ),
-    h(
-      'div',
-      { class: 'resultados', role: 'group', 'aria-label': `Estado del trabajo: ${it.texto.trim()}` },
-      S.RESULTADOS.map(([r, label]) =>
+    pend.length
+      ? [
+          h('p', { class: 'sec-hint' }, 'Tocá «Hecho» cuando termines un arreglo. Lo que no se haga queda pendiente para la próxima visita.'),
+          pend.map(({ it, diag }) =>
+            h(
+              'div',
+              { class: 'pend', 'data-estado': it.estado },
+              h('i', { class: 'dot' }),
+              h(
+                'div',
+                { class: 'pend-texto' },
+                h('b', null, it.texto.trim()),
+                h(
+                  'small',
+                  null,
+                  h('em', null, S.ESTADO_LABEL[it.estado]),
+                  [it.precio ? S.fmtPrecio(it.precio) : null, origen(diag, ultimo)].filter(Boolean).map((t) => ` · ${t}`).join(''),
+                ),
+              ),
+              h('button', { class: 'btn-hecho', type: 'button', onclick: () => marcarHecho(a, it, diag, ultimo) }, icon('check'), 'Hecho'),
+            ),
+          ),
+        ]
+      : h('p', { class: 'vacio-sec' }, recientes.length ? 'No queda nada pendiente. ¡Todo hecho!' : 'No hay arreglos pendientes.'),
+    recientes.length
+      ? [
+          h('h3', { class: 'sec-sub' }, 'Hecho'),
+          recientes.map(({ it }) =>
+            h(
+              'div',
+              { class: 'hecho-card' },
+              h('span', { class: 'tilde', 'aria-hidden': 'true' }, icon('check')),
+              h(
+                'div',
+                { class: 'pend-texto' },
+                h('b', null, it.texto.trim()),
+                h('small', null, [cuandoHecho(it), it.precio ? S.fmtPrecio(it.precio) : null].filter(Boolean).join(' · ')),
+              ),
+              h('button', { class: 'btn-text', type: 'button', onclick: () => deshacer(it) }, 'Deshacer'),
+            ),
+          ),
+        ]
+      : null,
+  );
+  const abajo =
+    recientes.length || falta
+      ? h(
+          'div',
+          { class: 'envio' },
+          cobrado || falta
+            ? h(
+                'div',
+                { class: 'envio-total' },
+                recientes.length ? h('span', { class: 'hecho' }, 'Hecho: ', h('b', null, S.fmtPrecio(cobrado))) : h('span'),
+                falta ? h('span', { class: 'queda' }, 'Falta: ', h('b', null, S.fmtPrecio(falta))) : null,
+              )
+            : null,
+          recientes.length
+            ? h(
+                'div',
+                { class: 'envio-botones' },
+                h('button', { class: 'btn btn-primary', type: 'button', onclick: () => enviarResumen(a) }, icon('wa'), 'Enviar resumen de lo arreglado'),
+              )
+            : null,
+        )
+      : null;
+  return { cuerpo, abajo };
+}
+
+// Al terminar un arreglo: la fecha, el kilometraje y lo que se cobró.
+function marcarHecho(a, it, diag, ultimo) {
+  const hoy = Date.now();
+  let fecha = hoy;
+  const otraFecha = h('input', {
+    class: 'input',
+    type: 'date',
+    max: S.isoLocal(hoy),
+    hidden: true,
+    'aria-label': 'Fecha del arreglo',
+    onchange: (e) => {
+      const [y, m, dd] = e.target.value.split('-').map(Number);
+      if (y) fecha = new Date(y, m - 1, dd, 12).getTime();
+    },
+  });
+  const opciones = h('div', { class: 'chips-fecha', role: 'radiogroup', 'aria-label': 'Fecha del arreglo' });
+  const pintarFechas = (elegida) =>
+    fill(
+      opciones,
+      [
+        ['hoy', `Hoy, ${S.fmtFecha(hoy)}`, hoy],
+        ['ayer', 'Ayer', hoy - 864e5],
+        ['otra', 'Otra fecha', null],
+      ].map(([k, label, ts]) =>
         h(
           'button',
           {
-            class: `res res-${r}`,
             type: 'button',
-            'aria-pressed': String(it.resultado === r),
-            onclick: () => marcar(r),
+            role: 'radio',
+            'aria-checked': String(elegida === k),
+            onclick: () => {
+              otraFecha.hidden = k !== 'otra';
+              if (ts) fecha = ts;
+              else otraFecha.focus();
+              pintarFechas(k);
+            },
           },
-          r === 'hecho' ? icon('check') : null,
           label,
         ),
       ),
-    ),
-  );
-}
-
-// Plata: lo hecho y lo que queda (solo si cargaron precios).
-function totalesTrabajo(items) {
-  if (!S.conPrecio(items)) return null;
-  const hechos = S.suma(items.filter(S.hecho));
-  const quedan = S.suma(items.filter((i) => !S.hecho(i)));
-  return h(
-    'div',
-    { class: 'envio-total' },
-    h('span', { class: 'hecho' }, 'Hecho: ', h('b', null, S.fmtPrecio(hechos))),
-    h('span', { class: 'queda' }, 'Pendiente: ', h('b', null, S.fmtPrecio(quedan))),
-  );
-}
-
-// "3 hechos · 1 después · 1 no quiso"
-function textoResumen(cuenta) {
-  return [
-    cuenta.hecho ? `${cuenta.hecho} ${cuenta.hecho === 1 ? 'hecho' : 'hechos'}` : null,
-    cuenta.despues ? `${cuenta.despues} para después` : null,
-    cuenta.no ? `${cuenta.no} no quiso` : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
-}
-
-function filaHistorial(d) {
-  const items = d.items.filter((i) => i.texto.trim());
-  const n = (k) => items.filter((i) => i.estado === k).length;
-  const resumen = textoResumen(S.resumen(S.aResolver(d)));
-  const total = S.suma(items);
-  return h(
-    'button',
-    { class: 'row hist', type: 'button', onclick: () => go('/diag/' + d.id) },
-    h(
-      'span',
-      { class: 'row-main' },
+    );
+  pintarFechas('hoy');
+  const km = input({ inputmode: 'numeric', value: S.fmtKm(S.ultimoKm(a.id)), placeholder: '0', 'aria-label': 'Kilometraje' });
+  km.addEventListener('input', () => {
+    const n = parseInt(km.value.replace(/\D/g, ''), 10);
+    km.value = Number.isFinite(n) && n > 0 ? S.fmtKm(n) : '';
+  });
+  const precio = input({
+    inputmode: 'numeric',
+    value: it.precio ? Number(it.precio).toLocaleString('es-AR') : '',
+    placeholder: 'Opcional',
+    'aria-label': 'Precio cobrado',
+  });
+  precio.addEventListener('input', () => {
+    const n = parseInt(precio.value.replace(/\D/g, ''), 10);
+    precio.value = Number.isFinite(n) && n > 0 ? n.toLocaleString('es-AR') : '';
+  });
+  hoja(
+    'Marcar como hecho',
+    [
       h(
-        'span',
-        { class: 'row-title' },
-        S.fmtFecha(d.fecha, true),
-        d.enviado ? null : h('span', { class: 'tag' }, 'No enviado'),
+        'div',
+        { class: 'pend', 'data-estado': it.estado },
+        h('i', { class: 'dot' }),
+        h('div', { class: 'pend-texto' }, h('b', null, it.texto.trim()), h('small', null, h('em', null, S.ESTADO_LABEL[it.estado]), ` · ${origen(diag, ultimo)}`)),
       ),
-      h(
-        'span',
-        { class: 'row-sub' },
-        [d.km ? `${S.fmtKm(d.km)} km` : null, resumen || items.map((i) => i.texto.trim()).join(', ') || d.nota, total ? S.fmtPrecio(total) : null]
-          .filter(Boolean)
-          .join(' · '),
-      ),
-    ),
-    h(
-      'span',
-      { class: 'counts' },
-      S.ESTADOS.map(([k]) => (n(k) ? h('span', { 'data-estado': k }, h('i', { class: 'dot' }), n(k)) : null)),
-    ),
+      h('div', { class: 'field' }, h('span', null, 'Fecha del arreglo'), opciones, otraFecha),
+      h('div', { class: 'fields-row' }, field('Kilometraje', km), field('Precio cobrado ($)', precio)),
+      h('p', { class: 'hint' }, 'El kilometraje viene del último registrado. Cambialo si es otro.'),
+      h('button', { class: 'btn btn-primary block', type: 'submit' }, icon('check'), 'Guardar como hecho'),
+      h('button', { class: 'btn btn-ghost block', type: 'button', onclick: () => cerrarCapa() }, 'Cancelar'),
+    ],
+    {
+      onSubmit: () => {
+        const nKm = parseInt(km.value.replace(/\D/g, ''), 10);
+        const nPrecio = parseInt(precio.value.replace(/\D/g, ''), 10);
+        it.resultado = 'hecho';
+        it.resultadoFecha = fecha;
+        it.resultadoKm = Number.isFinite(nKm) && nKm > 0 ? nKm : null;
+        if (Number.isFinite(nPrecio) && nPrecio > 0) it.precio = nPrecio;
+        S.save();
+        cerrarCapa(() => {
+          refrescar();
+          snack(`Hecho: ${it.texto.trim()}`, 'Deshacer', () => {
+            it.resultado = null;
+            it.resultadoFecha = null;
+            it.resultadoKm = null;
+            S.save();
+            refrescar();
+          });
+        });
+      },
+    },
   );
+}
+
+function seccionHistorial(a, pend) {
+  const ultimo = S.diagsDe(a.id).find((d) => !S.vacio(d));
+  const diags = S.diagsDe(a.id).filter((d) => !S.vacio(d));
+  const hechos = S.hechosAuto(a.id);
+  const anioAprox = !a.anio && a.patente ? S.anioPorPatente(a.patente) : null;
+
+  // Línea de tiempo: cada día con su kilometraje, lo arreglado y los diagnósticos.
+  const dias = new Map();
+  const dia = (ts) => {
+    const k = S.isoLocal(ts);
+    if (!dias.has(k)) dias.set(k, { ts, km: 0, hechos: [], diags: [] });
+    return dias.get(k);
+  };
+  for (const x of hechos) {
+    const g = dia(x.it.resultadoFecha || x.diag.fecha);
+    g.hechos.push(x.it);
+    g.km = Math.max(g.km, x.it.resultadoKm || 0);
+  }
+  for (const d of diags) {
+    const g = dia(d.fecha);
+    g.diags.push(d);
+    g.km = Math.max(g.km, d.km || 0);
+  }
+  const grupos = [...dias.values()].sort((x, y) => y.ts - x.ts);
+  const titulo = (ts) => {
+    const k = S.isoLocal(ts);
+    if (k === S.isoLocal(Date.now())) return `Hoy, ${S.fmtFecha(ts, true)}`;
+    if (k === S.isoLocal(Date.now() - 864e5)) return `Ayer, ${S.fmtFecha(ts, true)}`;
+    return S.fmtFecha(ts, true);
+  };
+  const abrirDiag = (d) => go(`/auto/${a.id}/diagnostico/${d.id}`, { replace: true });
+
+  return {
+    cuerpo: h(
+      'div',
+      { class: 'sec' },
+      anioAprox
+        ? h(
+            'p',
+            { class: 'hero-anio' },
+            `Año aproximado: ${anioAprox}, según la patente`,
+            h(
+              'button',
+              {
+                class: 'btn-text',
+                type: 'button',
+                onclick: () => {
+                  a.anio = String(anioAprox);
+                  S.save();
+                  refrescar();
+                  snack(`Año ${anioAprox} guardado`);
+                },
+              },
+              'Confirmar año',
+            ),
+          )
+        : null,
+      pend.length
+        ? h(
+            'button',
+            { class: 'pend-resumen', type: 'button', onclick: () => go(`/auto/${a.id}/reparacion`, { replace: true }) },
+            h('span', { class: 'fila' }, h('b', null, `Pendiente · ${pend.length}`), h('span', { class: 'ir' }, 'Ir a Reparación')),
+            h(
+              'span',
+              { class: 'lista' },
+              pend.map(({ it, diag }) => (diag === ultimo ? it.texto.trim() : `${it.texto.trim()} (desde ${S.fmtFecha(diag.fecha)})`)).join(' · '),
+            ),
+          )
+        : null,
+      h(
+        'div',
+        { class: 'sec-head' },
+        h('h2', null, 'Historial clínico'),
+        grupos.length
+          ? h(
+              'small',
+              null,
+              [
+                diags.length === 1 ? '1 diagnóstico' : `${diags.length} diagnósticos`,
+                hechos.length === 1 ? '1 arreglo' : `${hechos.length} arreglos`,
+              ].join(' · '),
+            )
+          : null,
+      ),
+      grupos.length
+        ? h(
+            'div',
+            { class: 'linea-tiempo' },
+            grupos.map((g) =>
+              h(
+                'div',
+                { class: 'dia' },
+                h('span', { class: 'dia-marca', 'aria-hidden': 'true' }),
+                h(
+                  'div',
+                  { class: 'dia-cuerpo' },
+                  h('div', { class: 'dia-cab' }, h('b', null, titulo(g.ts)), g.km ? h('span', null, `${S.fmtKm(g.km)} km`) : null),
+                  g.hechos.map((it) =>
+                    h(
+                      'div',
+                      { class: 'evento' },
+                      h('span', { class: 'tilde', 'aria-hidden': 'true' }, icon('check')),
+                      h('span', { class: 'evento-texto' }, h('b', null, it.texto.trim()), h('small', null, 'Arreglo hecho')),
+                      it.precio ? h('span', { class: 'evento-der' }, S.fmtPrecio(it.precio)) : null,
+                    ),
+                  ),
+                  g.diags.map((d) => {
+                    const n = d.items.filter((i) => i.texto.trim()).length;
+                    const total = S.suma(d.items.filter((i) => i.texto.trim()));
+                    return h(
+                      'button',
+                      { class: 'evento', type: 'button', onclick: () => abrirDiag(d) },
+                      h('span', { class: 'ic-diag', 'aria-hidden': 'true' }, icon('clipboard')),
+                      h(
+                        'span',
+                        { class: 'evento-texto' },
+                        h('b', null, ['Diagnóstico', n === 1 ? '1 falla' : `${n} fallas`, total ? S.fmtPrecio(total) : null].filter(Boolean).join(' · ')),
+                        h('small', null, d.enviado ? 'Enviado por WhatsApp' : 'Sin enviar'),
+                      ),
+                      h('span', { class: 'evento-der link' }, 'Abrir'),
+                    );
+                  }),
+                ),
+              ),
+            ),
+          )
+        : h('p', { class: 'vacio-sec' }, 'Todavía no hay diagnósticos ni arreglos.'),
+    ),
+  };
+}
+
+// ---------- Resumen de lo arreglado (lo que se le manda al cliente al entregar el vehículo)
+
+function datosResumen(a) {
+  const hechos = S.hechosRecientes(a.id);
+  if (!hechos.length) return null;
+  // Lo pendiente va como pendiente, aunque antes se haya marcado "para después" o "no quiso".
+  const pend = S.pendientesAuto(a.id).map((x) => ({ ...x.it, resultado: null }));
+  const items = [...hechos.map((x) => x.it), ...pend];
+  const fecha = Math.max(...hechos.map((x) => x.it.resultadoFecha || 0));
+  const km = Math.max(0, ...hechos.map((x) => x.it.resultadoKm || 0)) || S.ultimoKm(a.id);
+  return {
+    taller: S.db.taller,
+    logo: logoImg,
+    auto: a,
+    cliente: S.getCliente(a.clienteId),
+    diag: { fecha, km, nota: '', items },
+    modo: 'trabajo',
+  };
+}
+
+function enviarResumen(a, formato = 'png') {
+  document.activeElement?.blur?.();
+  const datos = datosResumen(a);
+  if (!datos) return snack('Marcá al menos un arreglo como hecho');
+  const nombre = `Trabajo-realizado-${a.patente || 'vehiculo'}-${S.isoLocal(Date.now())}.${formato}`;
+  const file = formato === 'pdf' ? archivoPDF(dibujarPDF(datos), nombre) : archivoPNG(dibujarReporte(datos), nombre);
+  compartir(file, S.getCliente(a.clienteId)).then((r) => {
+    if (!r) return;
+    snack(r === 'compartido' ? 'Resumen enviado' : 'Imagen descargada. Adjuntala en el chat del cliente.');
+  });
 }
 
 // En el campo Año se sugiere el que corresponde a la patente (se ve como ejemplo, no se guarda solo).
