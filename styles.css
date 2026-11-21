@@ -1161,38 +1161,6 @@ textarea.input {
 
 /* ---------- Ajustes */
 
-.logo-row {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 20px;
-}
-
-.logo-box {
-  width: 76px;
-  height: 76px;
-  border-radius: 20px;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  flex: none;
-  background: var(--surface);
-  box-shadow: inset 0 0 0 1px var(--line);
-  color: var(--faint);
-}
-
-.logo-box img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.logo-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
 .hint {
   color: var(--muted);
   font-size: 15px;
@@ -1849,4 +1817,154 @@ input::-webkit-calendar-picker-indicator {
 
 .vincular .btn-wa {
   margin-top: 14px;
+}
+
+/* ---------- Confirmar antes de borrar */
+
+.btn-peligro {
+  background: var(--urgente);
+  color: #fff;
+}
+
+.btn-peligro .icon {
+  width: 20px;
+  height: 20px;
+}
+
+.confirmar-texto {
+  margin: -8px 0 4px;
+  font-size: 15px;
+  color: var(--muted);
+}
+
+/* "Guardado" en el diagnóstico */
+.guardado {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 6px;
+  color: var(--bien-text);
+  font-weight: 600;
+}
+
+.guardado .icon {
+  width: 13px;
+  height: 13px;
+}
+
+/* ---------- Logo del taller */
+
+.logo-bloque {
+  margin-bottom: 20px;
+}
+
+.logo-zona {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 96px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 2px dashed var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.logo-zona.con-logo {
+  border-style: solid;
+  background: #fff;
+}
+
+.logo-zona img {
+  max-width: 100%;
+  max-height: 110px;
+  object-fit: contain;
+}
+
+.logo-pie {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.logo-botones {
+  display: flex;
+  flex: none;
+}
+
+.logo-botones .btn-text {
+  height: 36px;
+  padding: 0 10px;
+}
+
+/* ---------- Vista previa: imagen o PDF */
+
+.segmento {
+  display: flex;
+  gap: 2px;
+  margin-right: 8px;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.segmento button {
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 9px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.segmento button[aria-selected='true'] {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.hojas {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.hojas.pdf canvas {
+  border-radius: 4px;
+}
+
+.sumar-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 48px;
+  margin-bottom: 12px;
+  border-radius: 14px;
+  border: 1.5px dashed var(--line);
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.bar-id-text .bar-id-sub {
+  display: flex;
+  min-width: 0;
+}
+
+.bar-id-sub > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bar-id-sub .guardado {
+  flex: none;
 }

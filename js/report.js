@@ -42,6 +42,9 @@ export const FUENTES = [
   font(700, 56, true),
   font(600, 36),
   font(800, 46),
+  font(400, 10),
+  font(800, 17),
+  font(700, 15, true),
 ];
 
 function wrap(ctx, text, maxW) {
@@ -70,39 +73,49 @@ function setSpacing(ctx, px) {
   if ('letterSpacing' in ctx) ctx.letterSpacing = `${px}px`;
 }
 
-function drawCover(ctx, img, x, y, w, h) {
-  const s = Math.max(w / img.naturalWidth, h / img.naturalHeight);
-  const iw = img.naturalWidth * s;
-  const ih = img.naturalHeight * s;
-  ctx.drawImage(img, x + (w - iw) / 2, y + (h - ih) / 2, iw, ih);
-}
+// La patente se dibuja proporcional a su alto (112 en la imagen, ~26 en el PDF).
+const anchoPatente = (ctx, patente, h) => {
+  const k = h / 112;
+  ctx.font = font(700, 56 * k, true);
+  setSpacing(ctx, 3 * k);
+  const w = Math.max(250 * k, ctx.measureText(fmtPatente(patente)).width + 64 * k);
+  setSpacing(ctx, 0);
+  return w;
+};
 
 function drawPlate(ctx, patente, x, y, w, h) {
+  const k = h / 112;
   const vieja = esPatenteVieja(patente);
-  const band = vieja ? 0 : 20;
+  const band = vieja ? 0 : 20 * k;
   ctx.save();
-  rr(ctx, x, y, w, h, 14);
+  rr(ctx, x, y, w, h, 14 * k);
   ctx.fillStyle = vieja ? '#151515' : '#FFFFFF';
   ctx.fill();
   if (band) {
     ctx.save();
-    rr(ctx, x, y, w, h, 14);
+    rr(ctx, x, y, w, h, 14 * k);
     ctx.clip();
     ctx.fillStyle = C.blue;
     ctx.fillRect(x, y, w, band);
     ctx.restore();
   }
-  ctx.lineWidth = 4;
+  ctx.lineWidth = 4 * k;
   ctx.strokeStyle = '#151515';
-  rr(ctx, x + 2, y + 2, w - 4, h - 4, 12);
+  rr(ctx, x + 2 * k, y + 2 * k, w - 4 * k, h - 4 * k, 12 * k);
   ctx.stroke();
-  ctx.font = font(700, 56, true);
-  setSpacing(ctx, 3);
+  ctx.font = font(700, 56 * k, true);
+  setSpacing(ctx, 3 * k);
   ctx.fillStyle = vieja ? '#F4F4F4' : '#151515';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(fmtPatente(patente) || 'S/P', x + w / 2, y + band + (h - band) / 2 + 3);
+  ctx.fillText(fmtPatente(patente) || 'S/P', x + w / 2, y + band + (h - band) / 2 + 3 * k);
   ctx.restore();
+}
+
+// El logo entra en una caja sin deformarse ni recortarse.
+function medidaLogo(logo, maxW, maxH) {
+  const k = Math.min(maxW / logo.naturalWidth, maxH / logo.naturalHeight);
+  return { w: logo.naturalWidth * k, h: logo.naturalHeight * k };
 }
 
 // Una sola función mide y dibuja, así el alto siempre coincide.
@@ -118,21 +131,16 @@ function layout(ctx, draw, { taller, logo, auto, cliente, diag, modo = 'diagnost
 
   // Taller
   const conLogo = !!(logo && logo.complete && logo.naturalWidth);
-  const L = 112;
-  const x0 = conLogo ? P + L + 28 : P;
+  const ml = conLogo ? medidaLogo(logo, 280, 112) : { w: 0, h: 0 };
+  const L = ml.h;
+  const x0 = conLogo ? P + ml.w + 28 : P;
   ctx.font = font(800, 44);
   const nombre = wrap(ctx, taller?.nombre || 'Taller', W - x0 - P);
   ctx.font = font(500, 28);
   const sub = wrap(ctx, [taller?.telefono, taller?.direccion].filter(Boolean).join('  ·  '), W - x0 - P).filter(Boolean);
   const bloque = nombre.length * 52 + sub.length * 38 + (sub.length ? 6 : 0);
   let ty = conLogo ? y + Math.max(0, (L - bloque) / 2) : y;
-  if (draw && conLogo) {
-    ctx.save();
-    rr(ctx, P, y, L, L, 26);
-    ctx.clip();
-    drawCover(ctx, logo, P, y, L, L);
-    ctx.restore();
-  }
+  if (draw && conLogo) ctx.drawImage(logo, P, y, ml.w, ml.h);
   ctx.font = font(800, 44);
   for (const l of nombre) {
     if (draw) {
@@ -380,12 +388,297 @@ export const archivoPNG = (cv, nombre) =>
   new File([bytesDe(cv.toDataURL('image/png'))], nombre, { type: 'image/png' });
 
 // PDF de una página con la imagen (JPEG) ocupando todo el ancho.
-export function archivoPDF(cv, nombre) {
-  const jpg = bytesDe(cv.toDataURL('image/jpeg', 0.92));
-  const w = cv.width;
-  const h = cv.height;
-  const pw = 595.28;
-  const ph = +((pw * h) / w).toFixed(2);
+
+// ---------- PDF: documento A4 (membrete, datos, tabla, totales)
+
+const A4 = { w: 595.28, h: 841.89 };
+const ESCALA = 3; // ~216 ppp: nítido en pantalla e impreso
+const M = 42;
+const PIE = 46;
+
+const COLOR_ESTADO = Object.fromEntries(SECCIONES.map((s) => [s.k, s]));
+const ETIQUETA = { urgente: 'Urgente', pronto: 'Pronto', bien: 'Bien' };
+
+export function dibujarPDF({ taller, logo, auto, cliente, diag, modo = 'diagnostico' }) {
+  const trabajo = modo === 'trabajo';
+  const vivos = diag.items.filter((i) => i.texto.trim());
+  const aResolver = porPrioridad(vivos.filter((i) => i.estado !== 'bien'));
+  const enBuenEstado = vivos.filter((i) => i.estado === 'bien');
+  const precios = conPrecio(trabajo ? aResolver : vivos);
+  const titulo = trabajo ? 'TRABAJO REALIZADO' : precios ? 'PRESUPUESTO' : 'DIAGNÓSTICO';
+  const fecha = fmtFechaLarga(trabajo ? ultimoHecho(diag) : diag.fecha);
+  const nombreTaller = taller?.nombre || 'Taller';
+  const contacto = [taller?.telefono, taller?.direccion].filter(Boolean).join('  ·  ');
+
+  const paginas = [];
+  let ctx;
+  let y;
+
+  // Columnas de la tabla
+  const colPrioridad = M;
+  const anchoPrioridad = 76;
+  const anchoEstado = trabajo ? 78 : 0;
+  const anchoImporte = precios ? 78 : 0;
+  const colDetalle = M + anchoPrioridad;
+  const finDetalle = A4.w - M - anchoEstado - anchoImporte - (anchoEstado || anchoImporte ? 10 : 0);
+  const colEstado = A4.w - M - anchoImporte - anchoEstado;
+
+  const texto = (t, x, yy, { f = font(400, 10), color = C.ink, alinear = 'left', espacio = 0 } = {}) => {
+    ctx.font = f;
+    setSpacing(ctx, espacio);
+    ctx.fillStyle = color;
+    ctx.textAlign = alinear;
+    ctx.fillText(t, x, yy);
+    setSpacing(ctx, 0);
+    ctx.textAlign = 'left';
+  };
+  const etiqueta = (t, x, yy, alinear = 'left') =>
+    texto(t, x, yy, { f: font(700, 7.5, true), color: C.faint, espacio: 1.2, alinear });
+
+  function nuevaPagina() {
+    const cv = document.createElement('canvas');
+    cv.width = Math.round(A4.w * ESCALA);
+    cv.height = Math.round(A4.h * ESCALA);
+    ctx = cv.getContext('2d');
+    ctx.scale(ESCALA, ESCALA);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, A4.w, A4.h);
+    ctx.textBaseline = 'top';
+    paginas.push(cv);
+    y = M;
+  }
+
+  // Membrete completo (primera página)
+  function membrete() {
+    const conLogo = !!(logo && logo.complete && logo.naturalWidth);
+    const ml = conLogo ? medidaLogo(logo, 150, 54) : { w: 0, h: 0 };
+    if (conLogo) ctx.drawImage(logo, M, y, ml.w, ml.h);
+    const x = conLogo ? M + ml.w + 14 : M;
+    ctx.font = font(700, 15, true);
+    setSpacing(ctx, 1.6);
+    const anchoTitulo = ctx.measureText(titulo).width;
+    setSpacing(ctx, 0);
+    const maxTexto = A4.w - M - anchoTitulo - 24 - x;
+    ctx.font = font(800, 17);
+    const lineasNombre = wrap(ctx, nombreTaller, maxTexto);
+    ctx.font = font(400, 9);
+    const lineasContacto = contacto ? wrap(ctx, contacto, maxTexto) : [];
+    const altoTexto = lineasNombre.length * 20 + lineasContacto.length * 12.5;
+    let ty = y + Math.max(0, (ml.h - altoTexto) / 2);
+    for (const l of lineasNombre) {
+      texto(l, x, ty, { f: font(800, 17) });
+      ty += 20;
+    }
+    for (const l of lineasContacto) {
+      texto(l, x, ty, { f: font(400, 9), color: C.muted });
+      ty += 12.5;
+    }
+    texto(titulo, A4.w - M, y + 2, { f: font(700, 15, true), espacio: 1.6, alinear: 'right' });
+    texto(fecha, A4.w - M, y + 22, { f: font(400, 9), color: C.muted, alinear: 'right' });
+    y = Math.max(ty, y + ml.h, y + 36) + 14;
+    ctx.fillStyle = C.ink;
+    ctx.fillRect(M, y, A4.w - 2 * M, 2);
+    y += 16;
+  }
+
+  // Encabezado corto de las páginas siguientes
+  function membreteCorto() {
+    texto(nombreTaller, M, y, { f: font(800, 11) });
+    texto(`${titulo} · continuación`, A4.w - M, y + 1, { f: font(700, 8.5, true), color: C.muted, espacio: 1, alinear: 'right' });
+    y += 18;
+    ctx.fillStyle = C.line;
+    ctx.fillRect(M, y, A4.w - 2 * M, 1);
+    y += 14;
+  }
+
+  // Vehículo y cliente, en dos tarjetas
+  function datos() {
+    const gap = 12;
+    const cw = (A4.w - 2 * M - gap) / 2;
+    const ch = 62;
+    for (const [i, lbl] of [[0, 'VEHÍCULO'], [1, 'CLIENTE']]) {
+      const cx = M + i * (cw + gap);
+      ctx.fillStyle = C.paper;
+      rr(ctx, cx, y, cw, ch, 8);
+      ctx.fill();
+      etiqueta(lbl, cx + 12, y + 10);
+    }
+    // Vehículo
+    let vx = M + 12;
+    const modelo = nombreAuto(auto);
+    if (auto.patente) {
+      const ph = 26;
+      const pw = anchoPatente(ctx, auto.patente, ph);
+      drawPlate(ctx, auto.patente, vx, y + 26, pw, ph);
+      vx += pw + 10;
+    }
+    const maxV = M + cw - 12 - vx;
+    ctx.font = font(700, 10.5);
+    const lineaModelo = modelo ? wrap(ctx, modelo, maxV)[0] : auto.patente ? '' : cliente?.nombre || '—';
+    if (lineaModelo) texto(lineaModelo, vx, y + 27, { f: font(700, 10.5) });
+    if (diag.km) texto(`${fmtKm(diag.km)} km`, vx, y + (lineaModelo ? 41 : 33), { f: font(400, 9), color: C.muted });
+    // Cliente
+    const cx = M + cw + gap + 12;
+    texto(cliente?.nombre || '—', cx, y + 27, { f: font(700, 10.5) });
+    if (cliente?.telefono) texto(cliente.telefono, cx, y + 41, { f: font(400, 9), color: C.muted });
+    y += ch + 20;
+  }
+
+  function encabezadoTabla() {
+    ctx.fillStyle = '#EFEEE9';
+    rr(ctx, M, y, A4.w - 2 * M, 22, 5);
+    ctx.fill();
+    etiqueta('PRIORIDAD', colPrioridad + 10, y + 7.5);
+    etiqueta('DETALLE', colDetalle, y + 7.5);
+    if (trabajo) etiqueta('ESTADO', colEstado, y + 7.5);
+    if (precios) etiqueta('IMPORTE', A4.w - M - 10, y + 7.5, 'right');
+    y += 22;
+  }
+
+  const limite = () => A4.h - PIE - 24;
+  function asegurar(alto) {
+    if (y + alto <= limite()) return false;
+    nuevaPagina();
+    membreteCorto();
+    return true;
+  }
+
+  function fila(it) {
+    ctx.font = font(400, 10);
+    const lineas = wrap(ctx, it.texto.trim(), finDetalle - colDetalle);
+    const alto = Math.max(1, lineas.length) * 13.5 + 14;
+    if (asegurar(alto)) encabezadoTabla();
+    const s = COLOR_ESTADO[it.estado];
+    const top = y + 8;
+    // Prioridad: punto de color + nombre
+    ctx.fillStyle = s.color;
+    ctx.beginPath();
+    ctx.arc(colPrioridad + 13.5, top + 5.5, 3.6, 0, Math.PI * 2);
+    ctx.fill();
+    texto(ETIQUETA[it.estado], colPrioridad + 22, top + 0.5, { f: font(700, 8.5), color: s.text });
+    const apagado = trabajo && it.resultado === 'no';
+    lineas.forEach((l, i) => texto(l, colDetalle, top + i * 13.5, { f: font(400, 10), color: apagado ? C.muted : C.ink }));
+    if (trabajo) {
+      const r = it.resultado;
+      if (r === 'hecho') {
+        ctx.strokeStyle = HECHO.color;
+        ctx.lineWidth = 1.6;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(colEstado, top + 5.5);
+        ctx.lineTo(colEstado + 3, top + 8.5);
+        ctx.lineTo(colEstado + 8.5, top + 2);
+        ctx.stroke();
+        texto('Hecho', colEstado + 12, top + 0.5, { f: font(700, 9), color: HECHO.text });
+      } else if (r === 'no') texto('No se hizo', colEstado, top + 0.5, { f: font(600, 9), color: C.muted });
+      else texto('Pendiente', colEstado, top + 0.5, { f: font(600, 9), color: QUEDA.text });
+    }
+    if (precios && it.precio) {
+      texto(fmtPrecio(it.precio), A4.w - M - 10, top, { f: font(600, 10), color: apagado ? C.faint : C.ink, alinear: 'right' });
+    }
+    y += alto;
+    ctx.fillStyle = C.line;
+    ctx.fillRect(M, y, A4.w - 2 * M, 0.75);
+  }
+
+  function totales() {
+    if (!precios) return;
+    const renglones = [];
+    if (trabajo) {
+      const hecho = suma(aResolver.filter((i) => i.resultado === 'hecho'));
+      const queda = suma(aResolver.filter((i) => !i.resultado || i.resultado === 'despues'));
+      const no = suma(aResolver.filter((i) => i.resultado === 'no'));
+      if (queda) renglones.push(['Queda pendiente', queda]);
+      if (no) renglones.push(['No se hizo', no]);
+      renglones.push(['TOTAL DEL TRABAJO', hecho, true]);
+    } else {
+      const porPrioridadTotal = ['urgente', 'pronto'].map((k) => [ETIQUETA[k], suma(vivos.filter((i) => i.estado === k))]).filter(([, v]) => v);
+      if (porPrioridadTotal.length > 1) renglones.push(...porPrioridadTotal);
+      renglones.push(['TOTAL', suma(vivos), true]);
+    }
+    const alto = renglones.length * 18 + 22;
+    asegurar(alto + 16);
+    y += 14;
+    const ancho = 230;
+    const x = A4.w - M - ancho;
+    ctx.fillStyle = C.paper;
+    rr(ctx, x, y, ancho, alto, 8);
+    ctx.fill();
+    let ty = y + 11;
+    for (const [lbl, valor, fuerte] of renglones) {
+      if (fuerte) {
+        ctx.fillStyle = C.line;
+        ctx.fillRect(x + 12, ty - 4, ancho - 24, 0.75);
+        texto(lbl, x + 12, ty + 2, { f: font(700, 8.5, true), color: C.muted, espacio: 1.2 });
+        texto(fmtPrecio(valor), x + ancho - 12, ty - 1, { f: font(800, 14), alinear: 'right' });
+      } else {
+        texto(lbl, x + 12, ty, { f: font(400, 9.5), color: C.muted });
+        texto(fmtPrecio(valor), x + ancho - 12, ty, { f: font(600, 9.5), color: C.muted, alinear: 'right' });
+      }
+      ty += 18;
+    }
+    y += alto + 6;
+  }
+
+  function enBuenEstadoYNota() {
+    if (!trabajo && enBuenEstado.length) {
+      ctx.font = font(400, 9.5);
+      const lineas = wrap(ctx, enBuenEstado.map((i) => i.texto.trim()).join(', '), A4.w - 2 * M);
+      asegurar(lineas.length * 13 + 30);
+      y += 16;
+      ctx.fillStyle = SECCIONES[2].color;
+      ctx.beginPath();
+      ctx.arc(M + 3.5, y + 3.5, 3.2, 0, Math.PI * 2);
+      ctx.fill();
+      etiqueta('REVISADO Y EN BUEN ESTADO', M + 11, y);
+      y += 14;
+      lineas.forEach((l, i) => texto(l, M, y + i * 13, { f: font(400, 9.5), color: C.muted }));
+      y += lineas.length * 13;
+    }
+    const nota = trabajo ? '' : (diag.nota || '').trim();
+    if (nota) {
+      ctx.font = font(400, 10);
+      const lineas = wrap(ctx, nota, A4.w - 2 * M - 24);
+      const alto = 28 + lineas.length * 14 + 10;
+      asegurar(alto + 16);
+      y += 16;
+      ctx.fillStyle = C.paper;
+      rr(ctx, M, y, A4.w - 2 * M, alto, 8);
+      ctx.fill();
+      etiqueta('NOTA', M + 12, y + 11);
+      lineas.forEach((l, i) => texto(l, M + 12, y + 26 + i * 14, { f: font(400, 10) }));
+      y += alto;
+    }
+  }
+
+  function pies() {
+    paginas.forEach((cv, i) => {
+      ctx = cv.getContext('2d');
+      const py = A4.h - PIE + 14;
+      ctx.fillStyle = C.line;
+      ctx.fillRect(M, py, A4.w - 2 * M, 0.75);
+      texto([nombreTaller, taller?.telefono].filter(Boolean).join(' · '), M, py + 9, { f: font(400, 8), color: C.faint });
+      texto(`Página ${i + 1} de ${paginas.length}`, A4.w - M, py + 9, { f: font(400, 8), color: C.faint, alinear: 'right' });
+    });
+  }
+
+  nuevaPagina();
+  membrete();
+  datos();
+  if (aResolver.length) {
+    encabezadoTabla();
+    aResolver.forEach(fila);
+  }
+  totales();
+  enBuenEstadoYNota();
+  pies();
+  return paginas;
+}
+
+// PDF con una imagen por página (A4).
+export function archivoPDF(paginas, nombre) {
+  const lista = Array.isArray(paginas) ? paginas : [paginas];
   const enc = new TextEncoder();
   const parts = [];
   const offs = [];
@@ -399,25 +692,32 @@ export function archivoPDF(cv, nombre) {
     offs[n] = len;
     push(`${n} 0 obj\n${body}\nendobj\n`);
   };
+  const n = lista.length;
+  // Objetos: 1 catálogo, 2 páginas, y por cada página: página, imagen, contenido.
+  const idPagina = (i) => 3 + i * 3;
   push('%PDF-1.4\n');
   obj(1, '<< /Type /Catalog /Pages 2 0 R >>');
-  obj(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
-  obj(
-    3,
-    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pw} ${ph}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`,
-  );
-  offs[4] = len;
-  push(
-    `4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${w} /Height ${h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpg.length} >>\nstream\n`,
-  );
-  push(jpg);
-  push('\nendstream\nendobj\n');
-  const content = `q ${pw} 0 0 ${ph} 0 0 cm /Im0 Do Q`;
-  obj(5, `<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
+  obj(2, `<< /Type /Pages /Kids [${lista.map((_, i) => `${idPagina(i)} 0 R`).join(' ')}] /Count ${n} >>`);
+  lista.forEach((cv, i) => {
+    const p = idPagina(i);
+    const pw = 595.28;
+    const ph = +((pw * cv.height) / cv.width).toFixed(2);
+    const jpg = bytesDe(cv.toDataURL('image/jpeg', 0.9));
+    obj(p, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pw} ${ph}] /Resources << /XObject << /Im${i} ${p + 1} 0 R >> >> /Contents ${p + 2} 0 R >>`);
+    offs[p + 1] = len;
+    push(
+      `${p + 1} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${cv.width} /Height ${cv.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpg.length} >>\nstream\n`,
+    );
+    push(jpg);
+    push('\nendstream\nendobj\n');
+    const content = `q ${pw} 0 0 ${ph} 0 0 cm /Im${i} Do Q`;
+    obj(p + 2, `<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
+  });
+  const total = 3 + n * 3;
   const xref = len;
-  let t = 'xref\n0 6\n0000000000 65535 f \n';
-  for (let i = 1; i <= 5; i++) t += `${String(offs[i]).padStart(10, '0')} 00000 n \n`;
-  t += `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  let t = `xref\n0 ${total}\n0000000000 65535 f \n`;
+  for (let i = 1; i < total; i++) t += `${String(offs[i]).padStart(10, '0')} 00000 n \n`;
+  t += `trailer\n<< /Size ${total} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
   push(t);
   return new File(parts, nombre, { type: 'application/pdf' });
 }

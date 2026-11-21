@@ -1,6 +1,6 @@
 import * as S from './store.js';
 import { h, fill, icon, plate, avatar, field, input, autosize, snack, cerrarSnackViejo } from './ui.js';
-import { dibujarReporte, archivoPNG, archivoPDF, FUENTES } from './report.js';
+import { dibujarReporte, dibujarPDF, archivoPNG, archivoPDF, FUENTES } from './report.js';
 import * as Sync from './sync.js';
 
 const app = document.getElementById('app');
@@ -13,9 +13,13 @@ let logoImg = null;
 function cargarLogo() {
   const src = S.db.taller?.logo;
   logoImg = null;
-  if (!src) return;
-  logoImg = new Image();
-  logoImg.src = src;
+  if (!src) return Promise.resolve();
+  const img = new Image();
+  logoImg = img;
+  return new Promise((ok) => {
+    img.onload = img.onerror = () => ok();
+    img.src = src;
+  });
 }
 cargarLogo();
 
@@ -194,6 +198,19 @@ function hoja(tituloHoja, contenido, { onSubmit, foco = false } = {}) {
   abrirCapa(h('div', { class: 'layer' }, h('div', { class: 'scrim', onclick: () => cerrarCapa() }), form));
   if (foco) requestAnimationFrame(() => form.querySelector('input')?.focus());
   return form;
+}
+
+// Antes de borrar, una pregunta clara. "Cancelar" queda justo abajo.
+function confirmarBorrado({ titulo, texto, boton = 'Eliminar', alConfirmar }) {
+  hoja(
+    titulo,
+    [
+      texto ? h('p', { class: 'hint confirmar-texto' }, texto) : null,
+      h('button', { class: 'btn btn-peligro block', type: 'submit' }, icon('trash'), boton),
+      h('button', { class: 'btn btn-ghost block', type: 'button', onclick: () => cerrarCapa() }, 'Cancelar'),
+    ],
+    { onSubmit: () => cerrarCapa(alConfirmar) },
+  );
 }
 
 // Un auto se reconoce por la patente; si no la cargaron, por el cliente.
@@ -752,7 +769,12 @@ function editor(id) {
     if (S.vacio(d)) S.borrarDiag(d.id);
     S.save();
   };
-  const guardar = () => S.save();
+  // Se guarda solo con cada cambio; la marca "Guardado" lo hace visible.
+  const marcaGuardado = h('span', { class: 'guardado', hidden: true }, icon('check'), 'Guardado');
+  const guardar = () => {
+    S.save();
+    marcaGuardado.hidden = false;
+  };
   const lista = h('div', { class: 'items' });
   const filas = new Map();
 
@@ -869,7 +891,24 @@ function editor(id) {
             )
           : null,
       ),
-      h('button', { class: 'x', type: 'button', 'aria-label': 'Quitar', onclick: () => quitar(it, true) }, icon('close')),
+      h(
+        'button',
+        {
+          class: 'x',
+          type: 'button',
+          'aria-label': 'Quitar',
+          onclick: () =>
+            it.texto.trim()
+              ? confirmarBorrado({
+                  titulo: '¿Quitar esta falla?',
+                  texto: it.texto.trim(),
+                  boton: 'Quitar',
+                  alConfirmar: () => quitar(it, true),
+                })
+              : quitar(it, false),
+        },
+        icon('close'),
+      ),
     );
     filas.set(it.id, row);
     return row;
@@ -997,16 +1036,25 @@ function editor(id) {
   };
 
   function eliminar() {
-    const tenia = !S.vacio(d);
-    const deshacer = S.borrarDiag(d.id);
-    S.save();
-    salir = null;
-    volver('/auto/' + a.id);
-    if (tenia)
-      snack('Diagnóstico eliminado', 'Deshacer', () => {
-        deshacer();
-        refrescar();
-      });
+    const borrar = () => {
+      const tenia = !S.vacio(d);
+      const deshacer = S.borrarDiag(d.id);
+      S.save();
+      salir = null;
+      volver('/auto/' + a.id);
+      if (tenia)
+        snack('Diagnóstico eliminado', 'Deshacer', () => {
+          deshacer();
+          refrescar();
+        });
+    };
+    // Si todavía no tiene nada, no hay nada que perder.
+    if (S.vacio(d)) return borrar();
+    confirmarBorrado({
+      titulo: '¿Eliminar este diagnóstico?',
+      texto: 'Se borra con todas sus fallas, en todos tus dispositivos.',
+      alConfirmar: borrar,
+    });
   }
 
   // Precios: aparecen cuando el mecánico ya los averiguó (presupuesto).
@@ -1058,7 +1106,12 @@ function editor(id) {
           'div',
           { class: 'bar-id-text' },
           h('b', null, nombre || c?.nombre || 'Diagnóstico'),
-          h('small', null, [nombre ? c?.nombre : null, S.fmtFecha(d.fecha)].filter(Boolean).join(' · ')),
+          h(
+            'small',
+            { class: 'bar-id-sub' },
+            h('span', null, [S.fmtFecha(d.fecha), nombre ? c?.nombre : null].filter(Boolean).join(' · ')),
+            marcaGuardado,
+          ),
         ),
       ),
       iconBtn('trash', 'Eliminar diagnóstico', eliminar),
@@ -1140,9 +1193,10 @@ function enviar(d, formato, modo = 'diagnostico') {
   if (borradoEnOtro(d)) return;
   if (S.vacio(d)) return snack('El diagnóstico está vacío');
   // Todo sincrónico hasta share(): Safari exige que siga "dentro" del toque.
-  const cv = dibujarReporte(datosReporte(d, modo));
+  const datos = datosReporte(d, modo);
   const nombre = nombreArchivo(d, formato, modo);
-  const file = formato === 'pdf' ? archivoPDF(cv, nombre) : archivoPNG(cv, nombre);
+  const file =
+    formato === 'pdf' ? archivoPDF(dibujarPDF(datos), nombre) : archivoPNG(dibujarReporte(datos), nombre);
   const cliente = S.getCliente(S.getAuto(d.autoId)?.clienteId);
   compartir(file, cliente).then((r) => {
     if (!r) return;
@@ -1161,24 +1215,71 @@ function enviar(d, formato, modo = 'diagnostico') {
   });
 }
 
+// Vista previa: lo mismo que va a recibir el cliente, como imagen o como PDF.
+let formatoPrevia = 'png';
 function verPrevia(d) {
   document.activeElement?.blur?.();
   if (borradoEnOtro(d)) return;
   if (S.vacio(d)) return snack('El diagnóstico está vacío');
-  const cv = dibujarReporte(datosReporte(d));
-  cv.setAttribute('role', 'img');
-  cv.setAttribute('aria-label', 'Diagnóstico como lo recibe el cliente');
+  const cuerpo = h('div', { class: 'viewer-body' });
+  const opciones = h('div', { class: 'segmento', role: 'tablist' });
+  function pintar() {
+    const datos = datosReporte(d);
+    const hojas = formatoPrevia === 'pdf' ? dibujarPDF(datos) : [dibujarReporte(datos)];
+    for (const cv of hojas) {
+      cv.setAttribute('role', 'img');
+      cv.setAttribute('aria-label', formatoPrevia === 'pdf' ? 'Página del PDF' : 'Imagen para WhatsApp');
+    }
+    fill(
+      cuerpo,
+      S.db.taller?.logo
+        ? null
+        : h(
+            'button',
+            { class: 'sumar-logo', type: 'button', onclick: () => elegirLogo(pintar) },
+            icon('image'),
+            'Agregar el logo del taller',
+          ),
+      h('div', { class: `hojas ${formatoPrevia}` }, hojas),
+    );
+    fill(
+      opciones,
+      [
+        ['png', 'Imagen'],
+        ['pdf', 'PDF'],
+      ].map(([f, label]) =>
+        h(
+          'button',
+          {
+            type: 'button',
+            role: 'tab',
+            'aria-selected': String(formatoPrevia === f),
+            onclick: () => {
+              formatoPrevia = f;
+              pintar();
+            },
+          },
+          label,
+        ),
+      ),
+    );
+  }
+  pintar();
   abrirCapa(
     h(
       'div',
       { class: 'layer viewer' },
-      bar(iconBtn('close', 'Cerrar', () => cerrarCapa()), h('div', { class: 'bar-title' }, 'Vista previa')),
-      h('div', { class: 'viewer-body' }, cv),
+      bar(iconBtn('close', 'Cerrar', () => cerrarCapa()), h('div', { class: 'bar-title' }, 'Vista previa'), opciones),
+      cuerpo,
       h(
         'div',
         { class: 'bottombar' },
-        h('button', { class: 'btn btn-ghost', type: 'button', onclick: () => enviar(d, 'pdf') }, icon('pdf'), 'PDF'),
-        h('button', { class: 'btn btn-wa', type: 'button', onclick: () => enviar(d, 'png') }, icon('wa'), 'Enviar por WhatsApp'),
+        h(
+          'button',
+          { class: 'btn btn-wa', type: 'button', onclick: () => enviar(d, formatoPrevia) },
+          icon('wa'),
+          'Enviar por WhatsApp',
+        ),
       ),
     ),
   );
@@ -1431,12 +1532,18 @@ function editarAuto(a) {
 }
 
 function borrarAutoUI(a) {
-  const deshacer = S.borrarAuto(a.id);
-  S.save();
-  volver('/');
-  snack('Auto eliminado', 'Deshacer', () => {
-    deshacer();
-    refrescar();
+  confirmarBorrado({
+    titulo: '¿Eliminar este auto?',
+    texto: 'Se borra con todo su historial, en todos tus dispositivos.',
+    alConfirmar: () => {
+      const deshacer = S.borrarAuto(a.id);
+      S.save();
+      volver('/');
+      snack('Auto eliminado', 'Deshacer', () => {
+        deshacer();
+        refrescar();
+      });
+    },
   });
 }
 
@@ -1559,15 +1666,21 @@ function editarCliente(c) {
           class: 'btn-text danger',
           type: 'button',
           onclick: () =>
-            cerrarCapa(() => {
-              const deshacer = S.borrarCliente(c.id);
-              S.save();
-              volver('/');
-              snack('Cliente eliminado', 'Deshacer', () => {
-                deshacer();
-                refrescar();
-              });
-            }),
+            cerrarCapa(() =>
+              confirmarBorrado({
+                titulo: '¿Eliminar este cliente?',
+                texto: 'Sus autos y su historial quedan guardados.',
+                alConfirmar: () => {
+                  const deshacer = S.borrarCliente(c.id);
+                  S.save();
+                  volver('/');
+                  snack('Cliente eliminado', 'Deshacer', () => {
+                    deshacer();
+                    refrescar();
+                  });
+                },
+              }),
+            ),
         },
         'Eliminar cliente',
       ),
@@ -1586,6 +1699,7 @@ function editarCliente(c) {
 
 // ---------- Ajustes
 
+// El logo se guarda con su forma (no se recorta cuadrado) y con fondo transparente.
 async function logoDesde(file) {
   const url = URL.createObjectURL(file);
   try {
@@ -1595,20 +1709,40 @@ async function logoDesde(file) {
       i.onerror = rej;
       i.src = url;
     });
-    const s = 256;
+    const k = Math.min(1, 640 / img.naturalWidth, 320 / img.naturalHeight);
     const cv = document.createElement('canvas');
-    cv.width = cv.height = s;
-    const ctx = cv.getContext('2d');
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, s, s);
-    const k = Math.min(s / img.naturalWidth, s / img.naturalHeight);
-    const w = img.naturalWidth * k;
-    const hh = img.naturalHeight * k;
-    ctx.drawImage(img, (s - w) / 2, (s - hh) / 2, w, hh);
+    cv.width = Math.max(1, Math.round(img.naturalWidth * k));
+    cv.height = Math.max(1, Math.round(img.naturalHeight * k));
+    cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
     return cv.toDataURL('image/png');
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+// Elegir el logo desde cualquier pantalla (Ajustes o la vista previa).
+function elegirLogo(luego) {
+  const inp = h('input', {
+    type: 'file',
+    accept: 'image/*',
+    hidden: true,
+    onchange: async (e) => {
+      const f = e.target.files[0];
+      inp.remove();
+      if (!f || !S.db.taller) return;
+      try {
+        S.db.taller.logo = await logoDesde(f);
+        S.save();
+        await cargarLogo();
+        luego?.();
+        snack('Logo guardado. Ya sale en los diagnósticos.');
+      } catch {
+        snack('No se pudo usar esa imagen');
+      }
+    },
+  });
+  document.body.append(inp);
+  inp.click();
 }
 
 function exportar() {
@@ -1638,24 +1772,6 @@ function ajustes() {
   const tel = input({ value: t.telefono, type: 'tel', inputmode: 'tel', placeholder: 'Opcional', oninput: set('telefono') });
   const dir = input({ value: t.direccion, autocapitalize: 'sentences', placeholder: 'Opcional', oninput: set('direccion') });
 
-  const archivoLogo = h('input', {
-    type: 'file',
-    accept: 'image/*',
-    hidden: true,
-    onchange: async (e) => {
-      const f = e.target.files[0];
-      if (!f) return;
-      try {
-        t.logo = await logoDesde(f);
-        S.save();
-        cargarLogo();
-        refrescar();
-      } catch {
-        snack('No se pudo usar esa imagen');
-      }
-    },
-  });
-
   return h(
     'div',
     { class: 'screen' },
@@ -1663,38 +1779,38 @@ function ajustes() {
     titulo('Taller'),
     h(
       'div',
-      { class: 'logo-row pad' },
+      { class: 'pad logo-bloque' },
       h(
         'button',
-        { class: 'logo-box', type: 'button', 'aria-label': 'Elegir logo', onclick: () => archivoLogo.click() },
-        t.logo ? h('img', { src: t.logo, alt: '' }) : icon('image'),
+        { class: `logo-zona${t.logo ? ' con-logo' : ''}`, type: 'button', onclick: () => elegirLogo(refrescar) },
+        t.logo ? h('img', { src: t.logo, alt: 'Logo del taller' }) : [icon('image'), h('span', null, 'Agregar el logo del taller')],
       ),
       h(
         'div',
-        { class: 'logo-actions' },
-        h(
-          'button',
-          { class: 'btn btn-ghost btn-sm', type: 'button', onclick: () => archivoLogo.click() },
-          t.logo ? 'Cambiar logo' : 'Agregar logo',
-        ),
+        { class: 'logo-pie' },
+        h('span', null, 'Sale en los diagnósticos, presupuestos y PDF.'),
         t.logo
           ? h(
-              'button',
-              {
-                class: 'btn-text',
-                type: 'button',
-                onclick: () => {
-                  t.logo = null;
-                  S.save();
-                  cargarLogo();
-                  refrescar();
+              'span',
+              { class: 'logo-botones' },
+              h('button', { class: 'btn-text', type: 'button', onclick: () => elegirLogo(refrescar) }, 'Cambiar'),
+              h(
+                'button',
+                {
+                  class: 'btn-text danger',
+                  type: 'button',
+                  onclick: () => {
+                    t.logo = null;
+                    S.save();
+                    cargarLogo();
+                    refrescar();
+                  },
                 },
-              },
-              'Quitar',
+                'Quitar',
+              ),
             )
           : null,
       ),
-      archivoLogo,
     ),
     h('div', { class: 'fields pad' }, field('Nombre', nombre), field('WhatsApp', tel), field('Dirección', dir)),
     titulo('Compu y celular'),
