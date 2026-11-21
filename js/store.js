@@ -1,4 +1,4 @@
-// Datos: todo vive en este dispositivo (localStorage).
+// Datos: se guardan en el dispositivo (funciona sin señal) y se sincronizan con la nube.
 
 const KEY = 'gianre:v1';
 
@@ -39,13 +39,169 @@ function load() {
 
 export const db = load();
 
+// ---------- Sincronización: qué cambió desde la última vez
+// Cada registro lleva "act" (cuándo cambió). En vez de tocar cada pantalla,
+// al guardar se compara cada registro con su última versión conocida.
+
+const TIPOS = ['clientes', 'autos', 'diagnosticos'];
+const KEY_SYNC = 'gianre:sync';
+
+function cargarMeta() {
+  try {
+    return { clave: null, version: 0, sucios: {}, borrados: {}, ...JSON.parse(localStorage.getItem(KEY_SYNC) || '{}') };
+  } catch {
+    return { clave: null, version: 0, sucios: {}, borrados: {} };
+  }
+}
+const meta = cargarMeta();
+export const sync = meta;
+export function guardarMeta() {
+  try {
+    localStorage.setItem(KEY_SYNC, JSON.stringify(meta));
+  } catch {}
+}
+
+const firma = (r) => JSON.stringify(r, (k, v) => (k === 'act' ? undefined : v));
+const firmas = new Map();
+function registros() {
+  const out = [];
+  if (db.taller) out.push(['taller:taller', db.taller]);
+  for (const t of TIPOS) for (const r of db[t]) out.push([`${t}:${r.id}`, r]);
+  return out;
+}
+for (const [k, r] of registros()) firmas.set(k, firma(r));
+
+function marcarCambios() {
+  const ahora = Date.now();
+  const vistos = new Set();
+  let hubo = false;
+  for (const [k, r] of registros()) {
+    vistos.add(k);
+    const f = firma(r);
+    if (firmas.get(k) !== f) {
+      r.act = Math.max(ahora, (r.act || 0) + 1);
+      firmas.set(k, f);
+      meta.sucios[k] = 1;
+      delete meta.borrados[k];
+      hubo = true;
+    }
+  }
+  for (const k of [...firmas.keys()]) {
+    if (!vistos.has(k)) {
+      firmas.delete(k);
+      meta.borrados[k] = ahora;
+      meta.sucios[k] = 1;
+      hubo = true;
+    }
+  }
+  if (hubo) guardarMeta();
+  return hubo;
+}
+
+let alGuardar = null;
+export const cuandoSeGuarde = (fn) => (alGuardar = fn);
+
 export function save() {
+  const hubo = marcarCambios();
   try {
     localStorage.setItem(KEY, JSON.stringify(db));
-    return true;
   } catch {
     return false;
   }
+  if (hubo) alGuardar?.();
+  return true;
+}
+
+// Todo lo local pasa a "para subir" (al crear el taller en la nube o al vincular).
+export function marcarTodo({ menosTaller = false } = {}) {
+  for (const [k, r] of registros()) {
+    if (menosTaller && k === 'taller:taller') continue;
+    r.act = r.act || Date.now();
+    meta.sucios[k] = 1;
+  }
+  guardarMeta();
+}
+
+export function paraSubir() {
+  const cambios = [];
+  const enviados = {};
+  const mapa = new Map(registros());
+  for (const k of Object.keys(meta.sucios)) {
+    const [tipo, id] = k.split(':');
+    const r = mapa.get(k);
+    if (r) {
+      // Un diagnóstico vacío todavía no es nada: se sube cuando tenga algo.
+      if (tipo === 'diagnosticos' && vacio(r)) continue;
+      cambios.push({ tipo, id, act: r.act, datos: r });
+      enviados[k] = r.act;
+    } else if (meta.borrados[k]) {
+      cambios.push({ tipo, id, act: meta.borrados[k], borrado: true });
+      enviados[k] = meta.borrados[k];
+    } else delete meta.sucios[k];
+  }
+  return { cambios, enviados };
+}
+
+// Limpia lo que ya subió, salvo que haya vuelto a cambiar mientras tanto.
+export function subidos(enviados) {
+  const mapa = new Map(registros());
+  for (const [k, act] of Object.entries(enviados)) {
+    const ahora = mapa.get(k)?.act ?? meta.borrados[k];
+    if (ahora === act) delete meta.sucios[k];
+  }
+  guardarMeta();
+}
+
+// Trae lo que cambió en otros dispositivos. Gana lo más nuevo.
+export function aplicarRemotos(cambios = []) {
+  let hubo = false;
+  for (const c of cambios) {
+    const k = `${c.tipo}:${c.id}`;
+    if (c.tipo === 'taller') {
+      if (!c.borrado && (!db.taller || (db.taller.act || 0) < c.act)) {
+        db.taller = { ...c.datos, act: c.act };
+        firmas.set(k, firma(db.taller));
+        delete meta.sucios[k];
+        hubo = true;
+      }
+      continue;
+    }
+    if (!TIPOS.includes(c.tipo)) continue;
+    const lista = db[c.tipo];
+    const i = lista.findIndex((r) => r.id === c.id);
+    const local = lista[i];
+    if (c.borrado) {
+      if (local && (local.act || 0) < c.act) {
+        lista.splice(i, 1);
+        firmas.delete(k);
+        delete meta.sucios[k];
+        meta.borrados[k] = c.act;
+        hubo = true;
+      }
+      continue;
+    }
+    if (local) {
+      if ((local.act || 0) >= c.act) continue;
+      // Mismo objeto: si una pantalla lo tiene abierto, ve el cambio.
+      for (const key of Object.keys(local)) delete local[key];
+      Object.assign(local, c.datos, { act: c.act });
+      firmas.set(k, firma(local));
+    } else {
+      if ((meta.borrados[k] || 0) >= c.act) continue;
+      const nuevo = { ...c.datos, act: c.act };
+      lista.push(nuevo);
+      firmas.set(k, firma(nuevo));
+    }
+    delete meta.sucios[k];
+    hubo = true;
+  }
+  if (hubo) {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(db));
+    } catch {}
+  }
+  guardarMeta();
+  return hubo;
 }
 
 export const snapshot = () => JSON.stringify(db);
@@ -173,7 +329,29 @@ export function pendientes(autoId, excluirId) {
   return { diag, items: diag.items.filter((i) => i.estado !== 'bien' && !i.hecho && i.texto.trim()) };
 }
 
-export function buscarAutos(q = '') {
+// ---------- Semáforo y trabajo realizado
+
+export const PRIORIDAD = { urgente: 0, pronto: 1, bien: 2 };
+export const porSemaforo = (items) => [...items].sort((x, y) => PRIORIDAD[x.estado] - PRIORIDAD[y.estado]);
+
+// Checklist del auto: lo que hay que hacer según el último diagnóstico, rojo primero.
+export function trabajos(autoId) {
+  const diag = diagsDe(autoId).find((d) => !vacio(d));
+  if (!diag) return { diag: null, items: [], hechos: 0 };
+  const items = porSemaforo(diag.items.filter((i) => i.estado !== 'bien' && i.texto.trim()));
+  return { diag, items, hechos: items.filter((i) => i.hecho).length };
+}
+
+// Rojo: hay urgentes sin hacer. Amarillo: queda algo. Verde: al día.
+export function semaforo(autoId) {
+  const { diag, items } = trabajos(autoId);
+  if (!diag) return null;
+  const faltan = items.filter((i) => !i.hecho);
+  const color = faltan.some((i) => i.estado === 'urgente') ? 'urgente' : faltan.length ? 'pronto' : 'bien';
+  return { color, faltan: faltan.length };
+}
+
+export function buscarAutos(q = '', { orden = 'reciente' } = {}) {
   const t = fold(q);
   const qp = normPatente(q);
   const qd = q.replace(/\D/g, '');
@@ -187,7 +365,8 @@ export function buscarAutos(q = '') {
         (c && fold(c.nombre).includes(t)) ||
         (c && qd.length >= 4 && (c.telefono || '').replace(/\D/g, '').includes(qd)),
     )
-    .sort((x, y) => y.t - x.t);
+    .map((x) => (orden === 'semaforo' ? { ...x, nivel: PRIORIDAD[semaforo(x.a.id)?.color] ?? 2 } : x))
+    .sort((x, y) => (orden === 'semaforo' ? x.nivel - y.nivel : 0) || y.t - x.t);
 }
 
 // ---------- Escrituras

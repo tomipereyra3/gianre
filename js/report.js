@@ -19,6 +19,13 @@ const SECCIONES = [
   { k: 'bien', label: 'En buen estado', color: '#23864A', bg: '#E3F2E8', text: '#1B6B3A' },
 ];
 
+const HECHO = { k: 'hecho', label: 'Hecho', color: '#23864A', bg: '#E3F2E8', text: '#1B6B3A', tilde: true };
+
+const PRIO = { urgente: 0, pronto: 1, bien: 2 };
+const porPrioridad = (items) => [...items].sort((x, y) => PRIO[x.estado] - PRIO[y.estado]);
+
+const ultimoHecho = (diag) => Math.max(0, ...diag.items.map((i) => i.hecho || 0)) || Date.now();
+
 const font = (w, s, narrow = false) =>
   `${w} ${s}px ${narrow ? '"Archivo Narrow", ' : ''}Archivo, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
 
@@ -93,7 +100,8 @@ function drawPlate(ctx, patente, x, y, w, h) {
 }
 
 // Una sola función mide y dibuja, así el alto siempre coincide.
-function layout(ctx, draw, { taller, logo, auto, cliente, diag }) {
+function layout(ctx, draw, { taller, logo, auto, cliente, diag, modo = 'diagnostico' }) {
+  const trabajo = modo === 'trabajo';
   ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
   if (draw) {
@@ -149,14 +157,14 @@ function layout(ctx, draw, { taller, logo, auto, cliente, diag }) {
   setSpacing(ctx, 3);
   if (draw) {
     ctx.fillStyle = C.faint;
-    ctx.fillText('DIAGNÓSTICO', P, y + 2);
+    ctx.fillText(trabajo ? 'TRABAJO REALIZADO' : 'DIAGNÓSTICO', P, y + 2);
   }
   setSpacing(ctx, 0);
   ctx.font = font(500, 28);
   if (draw) {
     ctx.fillStyle = C.muted;
     ctx.textAlign = 'right';
-    ctx.fillText(fmtFechaLarga(diag.fecha), W - P, y);
+    ctx.fillText(fmtFechaLarga(trabajo ? ultimoHecho(diag) : diag.fecha), W - P, y);
     ctx.textAlign = 'left';
   }
   y += 34 + 24;
@@ -204,9 +212,20 @@ function layout(ctx, draw, { taller, logo, auto, cliente, diag }) {
   }
   if (cardH) y += cardH + 56;
 
-  // Secciones
-  for (const s of SECCIONES) {
-    const items = diag.items.filter((i) => i.estado === s.k && i.texto.trim());
+  // Secciones. Diagnóstico: por semáforo. Trabajo: lo hecho primero, después lo que queda.
+  const vivos = diag.items.filter((i) => i.texto.trim());
+  const grupos = trabajo
+    ? [
+        { ...HECHO, items: porPrioridad(vivos.filter((i) => i.hecho && i.estado !== 'bien')) },
+        ...SECCIONES.filter((s) => s.k !== 'bien').map((s) => ({
+          ...s,
+          label: s.k === 'urgente' ? 'Falta: urgente' : 'Falta: pronto',
+          items: vivos.filter((i) => !i.hecho && i.estado === s.k),
+        })),
+      ]
+    : SECCIONES.map((s) => ({ ...s, items: vivos.filter((i) => i.estado === s.k) }));
+  for (const s of grupos) {
+    const items = s.items;
     if (!items.length) continue;
     ctx.font = font(700, 26, true);
     setSpacing(ctx, 2.5);
@@ -232,10 +251,22 @@ function layout(ctx, draw, { taller, logo, auto, cliente, diag }) {
     items.forEach((it, idx) => {
       const lines = wrap(ctx, it.texto.trim(), W - 2 * P - 52);
       if (draw) {
-        ctx.fillStyle = s.color;
-        ctx.beginPath();
-        ctx.arc(P + 14, y + 23, 7, 0, Math.PI * 2);
-        ctx.fill();
+        if (s.tilde) {
+          ctx.strokeStyle = s.color;
+          ctx.lineWidth = 5;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          ctx.beginPath();
+          ctx.moveTo(P + 2, y + 24);
+          ctx.lineTo(P + 11, y + 33);
+          ctx.lineTo(P + 28, y + 13);
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = s.color;
+          ctx.beginPath();
+          ctx.arc(P + 14, y + 23, 7, 0, Math.PI * 2);
+          ctx.fill();
+        }
         ctx.fillStyle = C.ink;
         lines.forEach((l, i) => ctx.fillText(l, P + 52, y + i * 50));
       }
@@ -252,8 +283,8 @@ function layout(ctx, draw, { taller, logo, auto, cliente, diag }) {
     y += 60;
   }
 
-  // Nota
-  const nota = (diag.nota || '').trim();
+  // Nota (solo en el diagnóstico)
+  const nota = trabajo ? '' : (diag.nota || '').trim();
   if (nota) {
     ctx.font = font(500, 34);
     const lines = wrap(ctx, nota, W - 2 * P - 72);

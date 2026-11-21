@@ -1,6 +1,7 @@
 import * as S from './store.js';
 import { h, fill, icon, plate, avatar, field, input, autosize, snack, cerrarSnackViejo } from './ui.js';
 import { dibujarReporte, archivoPNG, archivoPDF, FUENTES } from './report.js';
+import * as Sync from './sync.js';
 
 const app = document.getElementById('app');
 
@@ -68,7 +69,9 @@ function render({ pop = false, mantener = false } = {}) {
   salir = null;
   rutaActual = ruta();
   let el = null;
-  if (!S.db.taller) el = bienvenida();
+  const v = rutaActual.match(/^\/vincular\/(\w+)$/);
+  if (v) el = vinculando(v[1]);
+  else if (!S.db.taller) el = bienvenida();
   else {
     for (const [re, fn] of rutas) {
       const m = rutaActual.match(re);
@@ -192,11 +195,21 @@ function hoja(tituloHoja, contenido, { onSubmit, foco = false } = {}) {
 const identidad = (a, c, size = '') =>
   a.patente ? plate(a.patente, size) : h('span', { class: `ident ${size}` }, avatar(c, size));
 
+// Rojo/amarillo con cuántos trabajos faltan; verde cuando está al día.
+function badgeSemaforo(luz) {
+  if (luz.color === 'bien') return h('span', { class: 'pend bien', title: 'Al día' }, icon('check'));
+  return h(
+    'span',
+    { class: `pend ${luz.color}`, title: luz.faltan === 1 ? 'Falta 1 trabajo' : `Faltan ${luz.faltan} trabajos` },
+    h('i'),
+    luz.faltan,
+  );
+}
+
 const mayusculas = (t) => t.trim().replace(/(^|\s)(\p{L})/gu, (_, s, l) => s + l.toUpperCase());
 
 function filaAuto(a, c, cuando, onclick) {
-  const pend = S.pendientes(a.id).items;
-  const urgente = pend.some((i) => i.estado === 'urgente');
+  const luz = S.semaforo(a.id);
   const principal = S.nombreAuto(a) || c?.nombre;
   const sub = principal ? [S.nombreAuto(a) ? c?.nombre : null, cuando].filter(Boolean).join(' · ') : '';
   return h(
@@ -206,20 +219,10 @@ function filaAuto(a, c, cuando, onclick) {
     h(
       'span',
       { class: 'row-main' },
-      h('span', { class: 'row-title' }, principal || mayusculas(cuando)),
+      h('span', { class: 'row-title' }, principal || cuando.charAt(0).toUpperCase() + cuando.slice(1)),
       sub ? h('span', { class: 'row-sub' }, sub) : null,
     ),
-    pend.length
-      ? h(
-          'span',
-          {
-            class: `pend ${urgente ? 'urgente' : 'pronto'}`,
-            title: pend.length === 1 ? '1 pendiente' : `${pend.length} pendientes`,
-          },
-          h('i'),
-          pend.length,
-        )
-      : null,
+    luz ? badgeSemaforo(luz) : null,
   );
 }
 
@@ -257,9 +260,152 @@ function bienvenida() {
       h('h1', null, '¿Cómo se llama tu taller?'),
       h('p', { class: 'lead' }, 'Va a aparecer en cada diagnóstico que mandes.'),
       nombre,
+      h('button', { class: 'btn-text ya-uso', type: 'button', onclick: tengoCodigo }, 'Ya lo uso en otro dispositivo'),
     ),
     h('div', { class: 'bottombar' }, h('button', { class: 'btn btn-primary', type: 'button', onclick: empezar }, 'Empezar')),
   );
+}
+
+// ---------- Compu y celular: vincular dispositivos
+
+const TEXTO_NUBE = {
+  ok: 'Guardado en la nube',
+  subiendo: 'Guardando…',
+  'sin-conexion': 'Sin señal: se guarda cuando vuelva',
+  error: 'No se pudo guardar en la nube. Se reintenta solo.',
+  apagado: 'Guardando…',
+};
+function estadoNube() {
+  const el = h('p', { class: 'nube pad' });
+  const pintar = (e) => {
+    el.dataset.estado = e;
+    fill(el, h('i'), TEXTO_NUBE[e] || '');
+  };
+  pintar(Sync.estado);
+  Sync.alCambiarEstado((e) => el.isConnected && pintar(e));
+  return el;
+}
+
+let vinculandoAhora = null;
+function vinculando(codigo) {
+  const texto = h('p', { class: 'lead' }, 'Conectando con tu taller…');
+  // Si la pantalla se redibuja mientras conecta, no repetir el pedido.
+  if (vinculandoAhora === codigo) return h('div', { class: 'screen bienvenida' }, h('div', { class: 'bienvenida-body' }, marca(), h('h1', null, 'Vinculando'), texto));
+  vinculandoAhora = codigo;
+  Sync.vincular(codigo)
+    .finally(() => (vinculandoAhora = null))
+    .then(() => {
+      history.replaceState({ depth: 0 }, '', '#/');
+      render();
+      snack('Listo. Ya tenés los mismos datos.');
+    })
+    .catch(() => {
+      fill(texto, 'El código venció o no es válido. Pedí uno nuevo en el otro dispositivo.');
+      fill(
+        acciones,
+        h('button', { class: 'btn btn-primary', type: 'button', onclick: tengoCodigo }, 'Ingresar otro código'),
+      );
+    });
+  const acciones = h('div', { class: 'bottombar' });
+  return h(
+    'div',
+    { class: 'screen bienvenida' },
+    h('div', { class: 'bienvenida-body' }, marca(), h('h1', null, 'Vinculando'), texto),
+    acciones,
+  );
+}
+
+function tengoCodigo() {
+  const campo = input({
+    class: 'input big codigo',
+    placeholder: 'XXXX XXXX',
+    maxlength: '9',
+    autocapitalize: 'characters',
+    autocorrect: 'off',
+    enterkeyhint: 'go',
+    'aria-label': 'Código',
+  });
+  const boton = h('button', { class: 'btn btn-primary block', type: 'submit' }, 'Vincular');
+  hoja(
+    'Tengo un código',
+    [
+      h('p', { class: 'hint' }, 'Está en el otro dispositivo, en Ajustes → Vincular otro dispositivo.'),
+      campo,
+      boton,
+    ],
+    {
+      foco: true,
+      onSubmit: async () => {
+        const c = campo.value.replace(/[^a-z0-9]/gi, '');
+        if (c.length < 8) return sacudir(campo);
+        boton.disabled = true;
+        fill(boton, 'Vinculando…');
+        try {
+          await Sync.vincular(c);
+          cerrarCapa(() => {
+            history.replaceState({ depth: 0 }, '', '#/');
+            render();
+            snack('Listo. Ya tenés los mismos datos.');
+          });
+        } catch {
+          boton.disabled = false;
+          fill(boton, 'Vincular');
+          sacudir(campo);
+          snack(navigator.onLine === false ? 'Sin conexión. Probá con internet.' : 'Ese código venció o no es válido');
+        }
+      },
+    },
+  );
+}
+
+// QR para escanear con el celular + el mismo código para tipear en la compu.
+let qrLib = null;
+function cargarQR() {
+  qrLib ||= new Promise((ok, mal) => {
+    const sc = h('script', { src: 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js' });
+    sc.onload = () => ok(window.qrcode);
+    sc.onerror = mal;
+    document.head.append(sc);
+  });
+  return qrLib;
+}
+
+function dibujarQR(qrcode, texto) {
+  const qr = qrcode(0, 'M');
+  qr.addData(texto);
+  qr.make();
+  const n = qr.getModuleCount();
+  let d = '';
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) d += `M${c} ${r}h1v1h-1z`;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', `-2 -2 ${n + 4} ${n + 4}`);
+  svg.setAttribute('class', 'qr');
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', 'Código QR para vincular');
+  svg.innerHTML = `<rect x="-2" y="-2" width="${n + 4}" height="${n + 4}" fill="#fff"/><path d="${d}" fill="#141414"/>`;
+  return svg;
+}
+
+function vincularOtro() {
+  const cuerpo = h('div', { class: 'vincular' }, h('p', { class: 'hint' }, 'Generando código…'));
+  hoja('Vincular otro dispositivo', [cuerpo, h('button', { class: 'btn btn-ghost block', type: 'submit' }, 'Listo')], {
+    onSubmit: () => cerrarCapa(),
+  });
+  Promise.all([Sync.pedirCodigo(), cargarQR()])
+    .then(([codigo, qrcode]) => {
+      const link = `${location.origin}${location.pathname}#/vincular/${codigo}`;
+      fill(
+        cuerpo,
+        dibujarQR(qrcode, link),
+        h('p', { class: 'vincular-paso' }, 'Escaneá con la cámara del celular'),
+        h('p', { class: 'hint' }, 'En una compu: Ajustes → Tengo un código'),
+        h('div', { class: 'codigo-grande' }, `${codigo.slice(0, 4)} ${codigo.slice(4)}`),
+        h('p', { class: 'hint' }, 'Vence en 15 minutos.'),
+      );
+    })
+    .catch(() =>
+      fill(cuerpo, h('p', { class: 'hint' }, 'Necesitás internet para vincular. Probá de nuevo cuando haya señal.')),
+    );
 }
 
 // ---------- Inicio
@@ -271,7 +417,7 @@ function inicio() {
   const lista = h('div', { class: 'list' });
   const dibujar = () => {
     if (!S.db.autos.length) return lista.replaceChildren(vacioInicio());
-    const res = S.buscarAutos(busqueda);
+    const res = S.buscarAutos(busqueda, { orden: 'semaforo' });
     lista.replaceChildren(
       ...(res.length
         ? res.map(({ a, c, t }) => filaAuto(a, c, S.hace(t)))
@@ -540,7 +686,7 @@ function editor(id) {
     }
   }
 
-  for (const it of d.items) lista.append(filaItem(it));
+  for (const it of S.porSemaforo(d.items)) lista.append(filaItem(it));
 
   // Lo que quedó pendiente de la visita anterior, a un toque.
   const anterior = S.pendientes(a.id, d.id);
@@ -700,14 +846,15 @@ function editor(id) {
 
 // ---------- Envío
 
-const datosReporte = (d) => {
+const datosReporte = (d, modo = 'diagnostico') => {
   const auto = S.getAuto(d.autoId);
-  return { taller: S.db.taller, logo: logoImg, auto, cliente: S.getCliente(auto?.clienteId), diag: d };
+  return { taller: S.db.taller, logo: logoImg, auto, cliente: S.getCliente(auto?.clienteId), diag: d, modo };
 };
 
-function nombreArchivo(d, ext) {
+function nombreArchivo(d, ext, modo = 'diagnostico') {
   const a = S.getAuto(d.autoId);
-  return `Diagnostico-${a?.patente || 'auto'}-${S.isoLocal(d.fecha)}.${ext}`;
+  const que = modo === 'trabajo' ? 'Trabajo-realizado' : 'Diagnostico';
+  return `${que}-${a?.patente || 'auto'}-${S.isoLocal(modo === 'trabajo' ? Date.now() : d.fecha)}.${ext}`;
 }
 
 function descargar(file) {
@@ -736,16 +883,19 @@ async function compartir(file, cliente) {
   return 'descargado';
 }
 
-function enviar(d, formato) {
+// modo 'diagnostico': lo que hay que hacer. modo 'trabajo': lo que se hizo y lo que queda.
+function enviar(d, formato, modo = 'diagnostico') {
   document.activeElement?.blur?.();
   if (S.vacio(d)) return snack('El diagnóstico está vacío');
   // Todo sincrónico hasta share(): Safari exige que siga "dentro" del toque.
-  const cv = dibujarReporte(datosReporte(d));
-  const file = formato === 'pdf' ? archivoPDF(cv, nombreArchivo(d, 'pdf')) : archivoPNG(cv, nombreArchivo(d, 'png'));
+  const cv = dibujarReporte(datosReporte(d, modo));
+  const nombre = nombreArchivo(d, formato, modo);
+  const file = formato === 'pdf' ? archivoPDF(cv, nombre) : archivoPNG(cv, nombre);
   const cliente = S.getCliente(S.getAuto(d.autoId)?.clienteId);
   compartir(file, cliente).then((r) => {
     if (!r) return;
-    d.enviado = Date.now();
+    if (modo === 'trabajo') d.trabajoEnviado = Date.now();
+    else d.enviado = Date.now();
     S.save();
     const aviso = () =>
       snack(
@@ -787,7 +937,7 @@ function fichaAuto(id) {
   const a = S.getAuto(id);
   if (!a) return null;
   const c = S.getCliente(a.clienteId);
-  const pend = S.pendientes(a.id);
+  const trab = S.trabajos(a.id);
   const diags = S.diagsDe(a.id).filter((d) => !S.vacio(d));
   const km = S.ultimoKm(a.id);
   const wa = S.waNumber(c?.telefono);
@@ -848,8 +998,31 @@ function fichaAuto(id) {
       detalle ? h('p', null, detalle) : null,
     ),
     cliente,
-    pend.items.length ? [titulo('Pendientes'), h('div', { class: 'card' }, pend.items.map(filaPendiente))] : null,
-    titulo('Historial'),
+    // Checklist punto por punto: rojo primero; un toque lo marca como hecho.
+    trab.items.length
+      ? [
+          h(
+            'h2',
+            { class: 'label label-row' },
+            'Trabajos',
+            h('span', { class: 'progreso' }, `${trab.hechos} de ${trab.items.length} hechos`),
+          ),
+          h('div', { class: 'card' }, trab.items.map(filaTrabajo)),
+          trab.hechos
+            ? h(
+                'div',
+                { class: 'pad accion-trabajo' },
+                h(
+                  'button',
+                  { class: 'btn btn-ghost block', type: 'button', onclick: () => enviar(trab.diag, 'png', 'trabajo') },
+                  icon('wa'),
+                  'Enviar trabajo realizado',
+                ),
+              )
+            : null,
+        ]
+      : null,
+    titulo('Historial clínico'),
     diags.length
       ? h('div', { class: 'card' }, diags.map(filaHistorial))
       : h('p', { class: 'none' }, 'Sin diagnósticos todavía'),
@@ -860,26 +1033,18 @@ function fichaAuto(id) {
   );
 }
 
-function filaPendiente(it) {
-  const row = h(
+function filaTrabajo(it) {
+  return h(
     'button',
     {
-      class: 'row check-row',
+      class: `row check-row${it.hecho ? ' on' : ''}`,
       type: 'button',
-      'data-estado': it.estado,
+      'data-estado': it.hecho ? 'bien' : it.estado,
+      'aria-pressed': String(!!it.hecho),
       onclick: () => {
-        if (it.hecho) return;
-        row.classList.add('on');
-        it.hecho = Date.now();
+        it.hecho = it.hecho ? null : Date.now();
         S.save();
-        setTimeout(() => {
-          refrescar();
-          snack('Marcado como hecho', 'Deshacer', () => {
-            it.hecho = null;
-            S.save();
-            refrescar();
-          });
-        }, 280);
+        refrescar();
       },
     },
     h('span', { class: 'check' }, icon('check')),
@@ -887,11 +1052,13 @@ function filaPendiente(it) {
       'span',
       { class: 'row-main' },
       h('span', { class: 'row-title wrap' }, it.texto.trim()),
-      h('span', { class: 'row-sub estado' }, S.ESTADO_LABEL[it.estado]),
+      h('span', { class: 'row-sub estado' }, it.hecho ? `Hecho · ${S.fmtFecha(it.hecho)}` : S.ESTADO_LABEL[it.estado]),
     ),
   );
-  return row;
 }
+
+const aHacer = (d) => d.items.filter((i) => i.estado !== 'bien' && i.texto.trim()).length;
+const hechos = (d) => d.items.filter((i) => i.estado !== 'bien' && i.texto.trim() && i.hecho).length;
 
 function filaHistorial(d) {
   const items = d.items.filter((i) => i.texto.trim());
@@ -911,7 +1078,11 @@ function filaHistorial(d) {
       h(
         'span',
         { class: 'row-sub' },
-        [d.km ? `${S.fmtKm(d.km)} km` : null, items.map((i) => i.texto.trim()).join(', ') || d.nota]
+        [
+          d.km ? `${S.fmtKm(d.km)} km` : null,
+          hechos(d) ? `${hechos(d)} de ${aHacer(d)} hechos` : null,
+          items.map((i) => i.texto.trim()).join(', ') || d.nota,
+        ]
           .filter(Boolean)
           .join(' · '),
       ),
@@ -1256,8 +1427,27 @@ function ajustes() {
       archivoLogo,
     ),
     h('div', { class: 'fields pad' }, field('Nombre', nombre), field('WhatsApp', tel), field('Dirección', dir)),
+    titulo('Compu y celular'),
+    estadoNube(),
+    h(
+      'div',
+      { class: 'card' },
+      h(
+        'button',
+        { class: 'row', type: 'button', onclick: vincularOtro },
+        h('span', { class: 'avatar mas' }, icon('qr')),
+        h('span', { class: 'row-main' }, h('span', { class: 'row-title' }, 'Vincular otro dispositivo')),
+        h('span', { class: 'go' }, icon('chevron')),
+      ),
+      h(
+        'button',
+        { class: 'row', type: 'button', onclick: tengoCodigo },
+        h('span', { class: 'avatar mas' }, icon('teclado')),
+        h('span', { class: 'row-main' }, h('span', { class: 'row-title' }, 'Tengo un código')),
+        h('span', { class: 'go' }, icon('chevron')),
+      ),
+    ),
     titulo('Copia de seguridad'),
-    h('p', { class: 'hint pad' }, 'Tus datos se guardan solo en este dispositivo.'),
     h(
       'div',
       { class: 'acciones pad' },
@@ -1272,6 +1462,22 @@ function ajustes() {
 
 if (!history.state) history.replaceState({ depth: 0 }, '', location.hash || '#/');
 render();
+
+// Si llega algo del otro dispositivo, se ve al toque (salvo que estén escribiendo).
+let refrescoPendiente = false;
+const escribiendo = () => document.activeElement?.matches?.('input, textarea');
+Sync.iniciar(() => {
+  if (capa || escribiendo()) refrescoPendiente = true;
+  else render({ mantener: true });
+});
+document.addEventListener('focusout', () =>
+  setTimeout(() => {
+    if (refrescoPendiente && !capa && !escribiendo()) {
+      refrescoPendiente = false;
+      render({ mantener: true });
+    }
+  }, 300),
+);
 
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
