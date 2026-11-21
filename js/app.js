@@ -61,11 +61,15 @@ function volver(fallback = '/') {
 }
 
 function render({ pop = false, mantener = false } = {}) {
+  // Redibujar la misma pantalla (por un cambio que llegó) no es salir de ella.
+  const misma = mantener && ruta() === rutaActual;
+  // Lo que estaba escrito en un campo se guarda antes de cambiar de pantalla.
+  if (!misma) document.activeElement?.blur?.();
   if (rutaActual) scrolls[rutaActual] = scrollY;
   const y = mantener ? scrollY : pop ? scrolls[ruta()] || 0 : 0;
   if (!mantener) cerrarSnackViejo();
   quitarCapa();
-  salir?.();
+  if (!misma) salir?.();
   salir = null;
   rutaActual = ruta();
   let el = null;
@@ -86,7 +90,8 @@ function render({ pop = false, mantener = false } = {}) {
   scrollTo(0, y);
   sombraBarra();
   // Enfocar en el mismo toque que abrió la pantalla: así el teclado sube solo (iOS incluido).
-  if (enfocar) enfocar.focus({ preventScroll: true });
+  // Si solo se redibujó por un cambio que llegó, no se abre el teclado.
+  if (enfocar && !misma) enfocar.focus({ preventScroll: true });
   enfocar = null;
 }
 
@@ -575,6 +580,7 @@ function editor(id) {
   const c = S.getCliente(a.clienteId);
   refrescarListas();
   salir = () => {
+    confirmar();
     if (S.vacio(d)) S.borrarDiag(d.id);
     S.save();
   };
@@ -609,12 +615,15 @@ function editor(id) {
     if (texto) agregar(texto, estado);
   }
 
-  function agregar(texto, estado) {
-    const it = { id: S.uid(), texto, estado, hecho: null };
+  function agregar(texto, estado, precio = null) {
+    const it = { id: S.uid(), texto, estado, precio, resultado: null, resultadoFecha: null };
     d.items.push(it);
     guardar();
     lista.append(filaItem(it, true));
     mostrarBanner();
+    // Si vuelve una falla que ya tenía precio, se muestran los precios.
+    if (precio) activarPrecios();
+    sumar();
   }
 
   function filaItem(it, animar = false) {
@@ -658,11 +667,40 @@ function editor(id) {
       h('i', { class: 'dot' }),
       h('span', null, S.ESTADO_LABEL[it.estado]),
     );
+    const precio = h('input', {
+      class: 'precio',
+      inputmode: 'numeric',
+      autocomplete: 'off',
+      placeholder: 'Precio',
+      'aria-label': `Precio de ${it.texto}`,
+      value: it.precio ? Number(it.precio).toLocaleString('es-AR') : '',
+      oninput: (e) => {
+        const n = parseInt(e.target.value.replace(/\D/g, ''), 10);
+        it.precio = Number.isFinite(n) && n > 0 ? n : null;
+        e.target.value = it.precio ? it.precio.toLocaleString('es-AR') : '';
+        guardar();
+        sumar();
+      },
+    });
+    enterPasaA(precio, () => precio.blur());
     const row = h(
       'div',
       { class: `item${animar ? ' nuevo' : ''}` },
       chip,
-      txt,
+      h(
+        'div',
+        { class: 'item-cuerpo' },
+        txt,
+        h('label', { class: 'precio-fila' }, h('span', null, '$'), precio),
+        // En el historial se ve qué pasó con cada falla.
+        it.resultado
+          ? h(
+              'span',
+              { class: `res-tag res-${it.resultado}` },
+              `${S.RESULTADO_LABEL[it.resultado]}${it.resultadoFecha ? ` · ${S.fmtFecha(it.resultadoFecha)}` : ''}`,
+            )
+          : null,
+      ),
       h('button', { class: 'x', type: 'button', 'aria-label': 'Quitar', onclick: () => quitar(it, true) }, icon('close')),
     );
     filas.set(it.id, row);
@@ -676,12 +714,17 @@ function editor(id) {
     guardar();
     filas.get(it.id)?.remove();
     mostrarBanner();
+    sumar();
     if (conDeshacer && it.texto.trim()) {
       snack(`Se quitó “${it.texto.trim()}”`, 'Deshacer', () => {
-        d.items.splice(Math.min(i, d.items.length), 0, it);
+        if (!S.getDiag(d.id)) return;
+        if (!d.items.some((x) => x.id === it.id)) d.items.splice(Math.min(i, d.items.length), 0, it);
         guardar();
+        // Si la pantalla se redibujó mientras tanto, se vuelve a dibujar con la falla.
+        if (!lista.isConnected) return refrescar();
         for (const x of d.items) if (filas.get(x.id)) lista.append(filas.get(x.id));
         mostrarBanner();
+        sumar();
       });
     }
   }
@@ -717,7 +760,7 @@ function editor(id) {
                 type: 'button',
                 onclick: () => {
                   d.arrastrado = true;
-                  for (const p of faltan) agregar(p.texto.trim(), p.estado);
+                  for (const p of faltan) agregar(p.texto.trim(), p.estado, p.precio || null);
                 },
               },
               'Agregar',
@@ -787,25 +830,56 @@ function editor(id) {
 
   function eliminar() {
     const tenia = !S.vacio(d);
-    const snap = S.snapshot();
-    S.borrarDiag(d.id);
+    const deshacer = S.borrarDiag(d.id);
     S.save();
     salir = null;
     volver('/auto/' + a.id);
     if (tenia)
       snack('Diagnóstico eliminado', 'Deshacer', () => {
-        S.restore(snap);
+        deshacer();
         refrescar();
       });
   }
+
+  // Precios: aparecen cuando el mecánico ya los averiguó (presupuesto).
+  let conPrecios = !!d.precios || S.conPrecio(d.items);
+  const totalBox = h('div', { class: 'total-fila' });
+  function sumar() {
+    const t = S.suma(d.items.filter((i) => i.texto.trim()));
+    fill(totalBox, h('span', null, 'Total'), h('b', null, S.fmtPrecio(t)));
+    totalBox.hidden = !conPrecios || !t;
+  }
+  sumar();
+  function activarPrecios() {
+    if (conPrecios) return;
+    conPrecios = d.precios = true;
+    guardar();
+    pantalla.classList.add('con-precios');
+    btnPrecios.hidden = true;
+    sumar();
+  }
+  const btnPrecios = h(
+    'button',
+    {
+      class: 'chip-add',
+      type: 'button',
+      hidden: conPrecios,
+      onclick: () => {
+        activarPrecios();
+        lista.querySelector('.precio')?.focus();
+      },
+    },
+    icon('add'),
+    'Precios',
+  );
 
   // Diagnóstico nuevo: el teclado ya abierto, listo para escribir.
   if (!d.items.length) enfocar = nuevoItem;
 
   const nombre = S.nombreAuto(a);
-  return h(
+  const pantalla = h(
     'div',
-    { class: 'screen editor' },
+    { class: `screen editor${conPrecios ? ' con-precios' : ''}` },
     bar(
       backBtn('/auto/' + a.id),
       h(
@@ -828,7 +902,8 @@ function editor(id) {
       lista,
       h('label', { class: 'add' }, h('span', { class: 'plus' }, icon('add')), nuevoItem),
     ),
-    h('div', { class: 'extras' }, extra('Kilometraje', kmBox, km), extra('Nota', notaBox, nota)),
+    totalBox,
+    h('div', { class: 'extras' }, btnPrecios, extra('Kilometraje', kmBox, km), extra('Nota', notaBox, nota)),
     kmBox,
     notaBox,
     h(
@@ -842,6 +917,7 @@ function editor(id) {
       h('button', { class: 'btn btn-wa', type: 'button', onclick: () => enviar(d, 'png') }, icon('wa'), 'Enviar por WhatsApp'),
     ),
   );
+  return pantalla;
 }
 
 // ---------- Envío
@@ -884,8 +960,16 @@ async function compartir(file, cliente) {
 }
 
 // modo 'diagnostico': lo que hay que hacer. modo 'trabajo': lo que se hizo y lo que queda.
+function borradoEnOtro(d) {
+  if (S.getDiag(d.id) && S.getAuto(d.autoId)) return false;
+  snack('Se borró en otro dispositivo');
+  volver('/');
+  return true;
+}
+
 function enviar(d, formato, modo = 'diagnostico') {
   document.activeElement?.blur?.();
+  if (borradoEnOtro(d)) return;
   if (S.vacio(d)) return snack('El diagnóstico está vacío');
   // Todo sincrónico hasta share(): Safari exige que siga "dentro" del toque.
   const cv = dibujarReporte(datosReporte(d, modo));
@@ -911,6 +995,7 @@ function enviar(d, formato, modo = 'diagnostico') {
 
 function verPrevia(d) {
   document.activeElement?.blur?.();
+  if (borradoEnOtro(d)) return;
   if (S.vacio(d)) return snack('El diagnóstico está vacío');
   const cv = dibujarReporte(datosReporte(d));
   cv.setAttribute('role', 'img');
@@ -998,17 +1083,18 @@ function fichaAuto(id) {
       detalle ? h('p', null, detalle) : null,
     ),
     cliente,
-    // Checklist punto por punto: rojo primero; un toque lo marca como hecho.
+    // Checklist punto por punto, rojo primero. Cada falla termina en
+    // Hecho, Después (queda para otra visita) o No quiso (el cliente no lo hizo).
     trab.items.length
       ? [
           h(
             'h2',
             { class: 'label label-row' },
             'Trabajos',
-            h('span', { class: 'progreso' }, `${trab.hechos} de ${trab.items.length} hechos`),
+            h('span', { class: 'progreso' }, `${trab.cuenta.hecho} de ${trab.items.length} hechos`),
           ),
-          h('div', { class: 'card' }, trab.items.map(filaTrabajo)),
-          trab.hechos
+          h('div', { class: 'card trabajos' }, trab.items.map(filaTrabajo), totalesTrabajo(trab.items)),
+          trab.cuenta.hecho || trab.cuenta.despues || trab.cuenta.no
             ? h(
                 'div',
                 { class: 'pad accion-trabajo' },
@@ -1034,35 +1120,83 @@ function fichaAuto(id) {
 }
 
 function filaTrabajo(it) {
+  const marcar = (r) => {
+    // Tocar de nuevo el que ya está marcado lo deja sin definir.
+    it.resultado = it.resultado === r ? null : r;
+    it.resultadoFecha = it.resultado ? Date.now() : null;
+    S.save();
+    refrescar();
+  };
+  const cuando = it.resultadoFecha ? ` · ${S.fmtFecha(it.resultadoFecha)}` : '';
   return h(
-    'button',
-    {
-      class: `row check-row${it.hecho ? ' on' : ''}`,
-      type: 'button',
-      'data-estado': it.hecho ? 'bien' : it.estado,
-      'aria-pressed': String(!!it.hecho),
-      onclick: () => {
-        it.hecho = it.hecho ? null : Date.now();
-        S.save();
-        refrescar();
-      },
-    },
-    h('span', { class: 'check' }, icon('check')),
+    'div',
+    { class: `trabajo${it.resultado ? ` res-${it.resultado}` : ''}`, 'data-estado': it.estado },
     h(
-      'span',
-      { class: 'row-main' },
-      h('span', { class: 'row-title wrap' }, it.texto.trim()),
-      h('span', { class: 'row-sub estado' }, it.hecho ? `Hecho · ${S.fmtFecha(it.hecho)}` : S.ESTADO_LABEL[it.estado]),
+      'div',
+      { class: 'trabajo-top' },
+      h('i', { class: 'dot' }),
+      h(
+        'span',
+        { class: 'row-main' },
+        h('span', { class: 'row-title wrap' }, it.texto.trim()),
+        h(
+          'span',
+          { class: 'row-sub estado' },
+          S.ESTADO_LABEL[it.estado],
+          it.resultado ? h('span', { class: 'res-texto' }, ` · ${S.RESULTADO_LABEL[it.resultado]}${cuando}`) : null,
+        ),
+      ),
+      it.precio ? h('span', { class: 'trabajo-precio' }, S.fmtPrecio(it.precio)) : null,
+    ),
+    h(
+      'div',
+      { class: 'resultados', role: 'group', 'aria-label': `Qué pasó con ${it.texto.trim()}` },
+      S.RESULTADOS.map(([r, label]) =>
+        h(
+          'button',
+          {
+            class: `res res-${r}`,
+            type: 'button',
+            'aria-pressed': String(it.resultado === r),
+            onclick: () => marcar(r),
+          },
+          r === 'hecho' ? icon('check') : null,
+          label,
+        ),
+      ),
     ),
   );
 }
 
-const aHacer = (d) => d.items.filter((i) => i.estado !== 'bien' && i.texto.trim()).length;
-const hechos = (d) => d.items.filter((i) => i.estado !== 'bien' && i.texto.trim() && i.hecho).length;
+// Plata: lo hecho y lo que queda (solo si cargaron precios).
+function totalesTrabajo(items) {
+  if (!S.conPrecio(items)) return null;
+  const hechos = S.suma(items.filter(S.hecho));
+  const quedan = S.suma(items.filter((i) => !S.hecho(i)));
+  return h(
+    'div',
+    { class: 'totales' },
+    h('span', null, 'Hecho ', h('b', null, S.fmtPrecio(hechos))),
+    h('span', null, 'Queda ', h('b', null, S.fmtPrecio(quedan))),
+  );
+}
+
+// "3 hechos · 1 después · 1 no quiso"
+function textoResumen(cuenta) {
+  return [
+    cuenta.hecho ? `${cuenta.hecho} ${cuenta.hecho === 1 ? 'hecho' : 'hechos'}` : null,
+    cuenta.despues ? `${cuenta.despues} para después` : null,
+    cuenta.no ? `${cuenta.no} no quiso` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
 
 function filaHistorial(d) {
   const items = d.items.filter((i) => i.texto.trim());
   const n = (k) => items.filter((i) => i.estado === k).length;
+  const resumen = textoResumen(S.resumen(S.aResolver(d)));
+  const total = S.suma(items);
   return h(
     'button',
     { class: 'row hist', type: 'button', onclick: () => go('/diag/' + d.id) },
@@ -1078,11 +1212,7 @@ function filaHistorial(d) {
       h(
         'span',
         { class: 'row-sub' },
-        [
-          d.km ? `${S.fmtKm(d.km)} km` : null,
-          hechos(d) ? `${hechos(d)} de ${aHacer(d)} hechos` : null,
-          items.map((i) => i.texto.trim()).join(', ') || d.nota,
-        ]
+        [d.km ? `${S.fmtKm(d.km)} km` : null, resumen || items.map((i) => i.texto.trim()).join(', ') || d.nota, total ? S.fmtPrecio(total) : null]
           .filter(Boolean)
           .join(' · '),
       ),
@@ -1133,12 +1263,11 @@ function editarAuto(a) {
 }
 
 function borrarAutoUI(a) {
-  const snap = S.snapshot();
-  S.borrarAuto(a.id);
+  const deshacer = S.borrarAuto(a.id);
   S.save();
   volver('/');
   snack('Auto eliminado', 'Deshacer', () => {
-    S.restore(snap);
+    deshacer();
     refrescar();
   });
 }
@@ -1263,12 +1392,11 @@ function editarCliente(c) {
           type: 'button',
           onclick: () =>
             cerrarCapa(() => {
-              const snap = S.snapshot();
-              S.borrarCliente(c.id);
+              const deshacer = S.borrarCliente(c.id);
               S.save();
               volver('/');
               snack('Cliente eliminado', 'Deshacer', () => {
-                S.restore(snap);
+                deshacer();
                 refrescar();
               });
             }),
@@ -1321,26 +1449,6 @@ function exportar() {
   else descargar(file);
 }
 
-async function importar(f) {
-  if (!f) return;
-  try {
-    const data = JSON.parse(await f.text());
-    if (!S.esCopiaValida(data)) throw new Error('copia');
-    const snap = S.snapshot();
-    S.restore({ ...data, taller: data.taller || S.db.taller });
-    S.limpiarVacios();
-    cargarLogo();
-    refrescar();
-    snack('Datos importados', 'Deshacer', () => {
-      S.restore(snap);
-      cargarLogo();
-      refrescar();
-    });
-  } catch {
-    snack('Ese archivo no es una copia válida');
-  }
-}
-
 function ajustes() {
   const t = S.db.taller;
   const set = (k) => (e) => {
@@ -1378,12 +1486,6 @@ function ajustes() {
         snack('No se pudo usar esa imagen');
       }
     },
-  });
-  const archivoCopia = h('input', {
-    type: 'file',
-    accept: 'application/json,.json',
-    hidden: true,
-    onchange: (e) => importar(e.target.files[0]),
   });
 
   return h(
@@ -1451,9 +1553,7 @@ function ajustes() {
     h(
       'div',
       { class: 'acciones pad' },
-      h('button', { class: 'btn btn-ghost', type: 'button', onclick: exportar }, icon('download'), 'Exportar'),
-      h('button', { class: 'btn btn-ghost', type: 'button', onclick: () => archivoCopia.click() }, icon('upload'), 'Importar'),
-      archivoCopia,
+      h('button', { class: 'btn btn-ghost', type: 'button', onclick: exportar }, icon('download'), 'Descargar copia'),
     ),
   );
 }
@@ -1467,6 +1567,7 @@ render();
 let refrescoPendiente = false;
 const escribiendo = () => document.activeElement?.matches?.('input, textarea');
 Sync.iniciar(() => {
+  cargarLogo();
   if (capa || escribiendo()) refrescoPendiente = true;
   else render({ mantener: true });
 });

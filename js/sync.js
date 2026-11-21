@@ -35,6 +35,8 @@ let enCurso = null;
 let otraVez = false;
 let timer = 0;
 let alTraer = null;
+// Cambia al vincular: lo que estaba en viaje con la conexión anterior se descarta.
+let generacion = 0;
 
 export function programar(ms = 1500) {
   clearTimeout(timer);
@@ -47,11 +49,14 @@ export function sincronizar() {
     otraVez = true;
     return enCurso;
   }
+  const mia = generacion;
   enCurso = (async () => {
     try {
       poner('subiendo');
       if (!S.sync.clave) {
-        S.sync.clave = await rpc('gianre_nuevo_taller');
+        const nueva = await rpc('gianre_nuevo_taller');
+        if (mia !== generacion) return;
+        S.sync.clave = nueva;
         S.sync.version = 0;
         S.marcarTodo();
       }
@@ -61,6 +66,7 @@ export function sincronizar() {
         p_desde: S.sync.version || 0,
         p_cambios: cambios,
       });
+      if (mia !== generacion) return;
       S.subidos(enviados);
       const trajo = S.aplicarRemotos(res.cambios);
       S.sync.version = res.hasta;
@@ -91,7 +97,8 @@ export function iniciar(onTraer) {
   setInterval(() => {
     if (!document.hidden) sincronizar();
   }, 20000);
-  sincronizar();
+  // Si se abrió con un link de vinculación, primero se vincula.
+  if (!location.hash.startsWith('#/vincular/')) sincronizar();
 }
 
 // Código corto para sumar otro dispositivo (vence a los 15 minutos).
@@ -105,6 +112,12 @@ export async function pedirCodigo() {
 // Lo que ya tenía cargado se suma; el nombre y logo del taller vienen del otro.
 export async function vincular(codigo) {
   const clave = await rpc('gianre_vincular', { p_codigo: codigo });
+  generacion++;
+  while (enCurso) {
+    try {
+      await enCurso;
+    } catch {}
+  }
   S.sync.clave = clave;
   S.sync.version = 0;
   if (S.db.taller) S.db.taller.act = 0;

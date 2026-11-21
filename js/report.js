@@ -1,5 +1,5 @@
 // Arma la imagen del diagnóstico (y el PDF) que recibe el cliente.
-import { fmtPatente, esPatenteVieja, fmtKm, fmtFechaLarga, nombreAuto } from './store.js';
+import { fmtPatente, esPatenteVieja, fmtKm, fmtFechaLarga, nombreAuto, fmtPrecio, suma, conPrecio } from './store.js';
 
 const W = 1080;
 const P = 72;
@@ -20,11 +20,15 @@ const SECCIONES = [
 ];
 
 const HECHO = { k: 'hecho', label: 'Hecho', color: '#23864A', bg: '#E3F2E8', text: '#1B6B3A', tilde: true };
+// En el trabajo realizado, lo que queda mantiene el color de su semáforo en cada renglón.
+const QUEDA = { k: 'queda', label: 'Queda pendiente', color: '#E3A008', bg: '#FCF1D9', text: '#8F5B00', porItem: true };
+const NO_SE_HIZO = { k: 'no', label: 'No se hizo', color: '#A19D94', bg: '#EFEEE9', text: '#57534B', porItem: true };
+const COLOR = Object.fromEntries(SECCIONES.map((s) => [s.k, s.color]));
 
 const PRIO = { urgente: 0, pronto: 1, bien: 2 };
 const porPrioridad = (items) => [...items].sort((x, y) => PRIO[x.estado] - PRIO[y.estado]);
 
-const ultimoHecho = (diag) => Math.max(0, ...diag.items.map((i) => i.hecho || 0)) || Date.now();
+const ultimoHecho = (diag) => Math.max(0, ...diag.items.map((i) => i.resultadoFecha || 0)) || Date.now();
 
 const font = (w, s, narrow = false) =>
   `${w} ${s}px ${narrow ? '"Archivo Narrow", ' : ''}Archivo, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
@@ -36,6 +40,8 @@ export const FUENTES = [
   font(500, 28),
   font(700, 26, true),
   font(700, 56, true),
+  font(600, 36),
+  font(800, 46),
 ];
 
 function wrap(ctx, text, maxW) {
@@ -212,18 +218,24 @@ function layout(ctx, draw, { taller, logo, auto, cliente, diag, modo = 'diagnost
   }
   if (cardH) y += cardH + 56;
 
-  // Secciones. Diagnóstico: por semáforo. Trabajo: lo hecho primero, después lo que queda.
+  // Secciones. Diagnóstico: por semáforo. Trabajo: lo hecho, lo que queda y lo que no se hizo.
   const vivos = diag.items.filter((i) => i.texto.trim());
+  const aResolver = vivos.filter((i) => i.estado !== 'bien');
   const grupos = trabajo
     ? [
-        { ...HECHO, items: porPrioridad(vivos.filter((i) => i.hecho && i.estado !== 'bien')) },
-        ...SECCIONES.filter((s) => s.k !== 'bien').map((s) => ({
-          ...s,
-          label: s.k === 'urgente' ? 'Falta: urgente' : 'Falta: pronto',
-          items: vivos.filter((i) => !i.hecho && i.estado === s.k),
-        })),
+        { ...HECHO, items: porPrioridad(aResolver.filter((i) => i.resultado === 'hecho')) },
+        { ...QUEDA, items: porPrioridad(aResolver.filter((i) => !i.resultado || i.resultado === 'despues')) },
+        { ...NO_SE_HIZO, items: porPrioridad(aResolver.filter((i) => i.resultado === 'no')) },
       ]
     : SECCIONES.map((s) => ({ ...s, items: vivos.filter((i) => i.estado === s.k) }));
+
+  // Precios: columna a la derecha, solo si el mecánico los cargó.
+  const precios = conPrecio(trabajo ? aResolver : vivos);
+  ctx.font = font(600, 36);
+  const anchoPrecio = precios
+    ? Math.max(...vivos.map((i) => (i.precio ? ctx.measureText(fmtPrecio(i.precio)).width : 0))) + 32
+    : 0;
+
   for (const s of grupos) {
     const items = s.items;
     if (!items.length) continue;
@@ -247,9 +259,9 @@ function layout(ctx, draw, { taller, logo, auto, cliente, diag, modo = 'diagnost
     setSpacing(ctx, 0);
     y += 52 + 26;
 
-    ctx.font = font(500, 38);
     items.forEach((it, idx) => {
-      const lines = wrap(ctx, it.texto.trim(), W - 2 * P - 52);
+      ctx.font = font(500, 38);
+      const lines = wrap(ctx, it.texto.trim(), W - 2 * P - 52 - anchoPrecio);
       if (draw) {
         if (s.tilde) {
           ctx.strokeStyle = s.color;
@@ -262,13 +274,20 @@ function layout(ctx, draw, { taller, logo, auto, cliente, diag, modo = 'diagnost
           ctx.lineTo(P + 28, y + 13);
           ctx.stroke();
         } else {
-          ctx.fillStyle = s.color;
+          ctx.fillStyle = s.porItem ? COLOR[it.estado] : s.color;
           ctx.beginPath();
           ctx.arc(P + 14, y + 23, 7, 0, Math.PI * 2);
           ctx.fill();
         }
-        ctx.fillStyle = C.ink;
+        ctx.fillStyle = s.k === 'no' ? C.muted : C.ink;
         lines.forEach((l, i) => ctx.fillText(l, P + 52, y + i * 50));
+        if (precios && it.precio) {
+          ctx.font = font(600, 36);
+          ctx.textAlign = 'right';
+          ctx.fillStyle = s.k === 'no' ? C.faint : C.ink;
+          ctx.fillText(fmtPrecio(it.precio), W - P, y + 2);
+          ctx.textAlign = 'left';
+        }
       }
       y += lines.length * 50;
       if (idx < items.length - 1) {
@@ -281,6 +300,36 @@ function layout(ctx, draw, { taller, logo, auto, cliente, diag, modo = 'diagnost
       }
     });
     y += 60;
+  }
+
+  // Total: el presupuesto (diagnóstico) o lo que se cobra (trabajo realizado).
+  if (precios) {
+    const total = trabajo ? suma(aResolver.filter((i) => i.resultado === 'hecho')) : suma(vivos);
+    const queda = trabajo ? suma(aResolver.filter((i) => !i.resultado || i.resultado === 'despues')) : 0;
+    const alto = 104 + (queda ? 48 : 0);
+    if (draw) {
+      ctx.fillStyle = C.paper;
+      rr(ctx, P, y, W - 2 * P, alto, 28);
+      ctx.fill();
+      ctx.font = font(700, 26, true);
+      setSpacing(ctx, 3);
+      ctx.fillStyle = C.muted;
+      ctx.textBaseline = 'middle';
+      ctx.fillText(trabajo ? 'TOTAL DEL TRABAJO' : 'TOTAL', P + 36, y + 52);
+      setSpacing(ctx, 0);
+      ctx.font = font(800, 46);
+      ctx.fillStyle = C.ink;
+      ctx.textAlign = 'right';
+      ctx.fillText(fmtPrecio(total), W - P - 36, y + 54);
+      if (queda) {
+        ctx.font = font(500, 30);
+        ctx.fillStyle = C.muted;
+        ctx.fillText(`Queda pendiente ${fmtPrecio(queda)}`, W - P - 36, y + 112);
+      }
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+    }
+    y += alto + 60;
   }
 
   // Nota (solo en el diagnóstico)

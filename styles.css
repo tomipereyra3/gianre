@@ -995,6 +995,8 @@ textarea.input {
   height: 50px;
   resize: none;
   overflow: hidden;
+  /* Crece con el texto sin depender de JavaScript (donde el navegador lo soporta). */
+  field-sizing: content;
 }
 
 .item .x {
@@ -1627,4 +1629,176 @@ input::-webkit-calendar-picker-indicator {
 
 .sheet > .hint {
   margin: -8px 0 0;
+}
+
+/* ---------- Precios (presupuesto) */
+
+.item-cuerpo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.precio-fila {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  margin: -6px 0 10px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.con-precios .precio-fila {
+  display: flex;
+}
+
+.precio {
+  width: 130px;
+  padding: 7px 10px;
+  border: 0;
+  outline: 0;
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.precio:focus {
+  box-shadow: inset 0 0 0 2px var(--ink);
+}
+
+.total-fila {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 10px 16px 0;
+  padding: 14px 18px;
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.total-fila b {
+  font-size: 19px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.res-tag {
+  align-self: flex-start;
+  margin: -6px 0 10px;
+  padding: 3px 9px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.res-tag.res-hecho { background: var(--bien-bg); color: var(--bien-text); }
+.res-tag.res-despues { background: var(--pronto-bg); color: var(--pronto-text); }
+
+/* ---------- Trabajos: Hecho / Después / No quiso */
+
+.trabajo {
+  padding: 14px 14px 12px;
+  position: relative;
+}
+
+.trabajo + .trabajo::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 14px;
+  right: 14px;
+  height: 1px;
+  background: var(--line);
+}
+
+.trabajo-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.trabajo-top .dot {
+  margin-top: 6px;
+}
+
+.trabajo-precio {
+  flex: none;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.trabajo.res-hecho .row-title,
+.trabajo.res-no .row-title {
+  color: var(--muted);
+}
+
+.trabajo.res-hecho .res-texto { color: var(--bien-text); }
+.trabajo.res-no .res-texto { color: var(--muted); }
+
+.resultados {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0 0 24px;
+}
+
+.res {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 40px;
+  border-radius: 20px;
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  transition: background 0.15s, color 0.15s;
+}
+
+.res .icon {
+  width: 18px;
+  height: 18px;
+}
+
+.res-hecho[aria-pressed='true'] {
+  background: var(--bien);
+  color: #fff;
+  box-shadow: none;
+}
+
+.res-despues[aria-pressed='true'] {
+  background: var(--pronto-bg);
+  color: var(--pronto-text);
+  box-shadow: inset 0 0 0 1.5px var(--pronto);
+}
+
+.res-no[aria-pressed='true'] {
+  background: var(--surface-2);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1.5px var(--faint);
+}
+
+.totales {
+  display: flex;
+  justify-content: space-between;
+  padding: 12px 14px 10px;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.totales b {
+  color: var(--text);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
 }

@@ -2,6 +2,7 @@
 
 const KEY = 'gianre:v1';
 
+// Semáforo: qué tan urgente es cada falla.
 export const ESTADOS = [
   ['urgente', 'Urgente'],
   ['pronto', 'Pronto'],
@@ -12,6 +13,14 @@ export const ESTADO_LABEL = Object.fromEntries(ESTADOS);
 // Lo nuevo entra como "Pronto"; un toque lo pasa a Urgente, otro a Bien.
 export const ESTADO_INICIAL = 'pronto';
 export const SIGUIENTE = { pronto: 'urgente', urgente: 'bien', bien: 'pronto' };
+
+// Qué pasó con cada falla después del diagnóstico.
+export const RESULTADOS = [
+  ['hecho', 'Hecho'],
+  ['despues', 'Después'],
+  ['no', 'No quiso'],
+];
+export const RESULTADO_LABEL = Object.fromEntries(RESULTADOS);
 
 // Respeta cómo ya escriben en WhatsApp: ❌📌❗⚠️🔴 = Urgente, ✅✔️🟢 = Bien.
 const MARCA_URGENTE = /❌|\u{1F4CC}|❗|‼️?|⚠️?|\u{1F534}/gu;
@@ -39,18 +48,40 @@ function load() {
 
 export const db = load();
 
+// Antes cada falla tenía "hecho"; ahora tiene "resultado" (hecho, después o no quiso).
+function migrarItem(it) {
+  if (it.hecho && !it.resultado) {
+    it.resultado = 'hecho';
+    it.resultadoFecha = it.hecho;
+  }
+  delete it.hecho;
+}
+for (const d of db.diagnosticos) for (const it of d.items || []) migrarItem(it);
+
+function persistir() {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(db));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ---------- Sincronización: qué cambió desde la última vez
-// Cada registro lleva "act" (cuándo cambió). En vez de tocar cada pantalla,
-// al guardar se compara cada registro con su última versión conocida.
+// Cada registro lleva "act" (cuándo cambió). Al guardar se compara cada registro
+// con su última versión conocida. Cada falla viaja como registro propio ("items"),
+// así dos personas pueden tocar fallas distintas del mismo auto sin pisarse.
 
 const TIPOS = ['clientes', 'autos', 'diagnosticos'];
 const KEY_SYNC = 'gianre:sync';
+const FORMATO = 2;
 
 function cargarMeta() {
+  const base = { clave: null, version: 0, sucios: {}, borrados: {}, formato: 1 };
   try {
-    return { clave: null, version: 0, sucios: {}, borrados: {}, ...JSON.parse(localStorage.getItem(KEY_SYNC) || '{}') };
+    return { ...base, ...JSON.parse(localStorage.getItem(KEY_SYNC) || '{}') };
   } catch {
-    return { clave: null, version: 0, sucios: {}, borrados: {} };
+    return base;
   }
 }
 const meta = cargarMeta();
@@ -61,15 +92,38 @@ export function guardarMeta() {
   } catch {}
 }
 
-const firma = (r) => JSON.stringify(r, (k, v) => (k === 'act' ? undefined : v));
-const firmas = new Map();
 function registros() {
   const out = [];
-  if (db.taller) out.push(['taller:taller', db.taller]);
-  for (const t of TIPOS) for (const r of db[t]) out.push([`${t}:${r.id}`, r]);
+  if (db.taller) out.push(['taller:taller', db.taller, null]);
+  for (const t of ['clientes', 'autos']) for (const r of db[t]) out.push([`${t}:${r.id}`, r, null]);
+  for (const d of db.diagnosticos) {
+    out.push([`diagnosticos:${d.id}`, d, null]);
+    for (const it of d.items) out.push([`items:${it.id}`, it, d]);
+  }
   return out;
 }
-for (const [k, r] of registros()) firmas.set(k, firma(r));
+
+// La firma del diagnóstico no incluye sus fallas: cada una tiene la suya.
+const firma = (k, r) =>
+  JSON.stringify(r, (key, v) => (key === 'act' || (key === 'items' && k.startsWith('diagnosticos:')) ? undefined : v));
+const firmas = new Map(); // clave → { f, act }
+const anotar = (k, r) => firmas.set(k, { f: firma(k, r), act: r.act || 0 });
+for (const [k, r] of registros()) anotar(k, r);
+
+// Pasar al formato 2: subir todo de nuevo con las fallas como registros propios.
+if ((meta.formato || 1) < FORMATO) {
+  if (meta.clave) {
+    const ahora = Date.now();
+    for (const [k, r] of registros()) {
+      r.act = k.startsWith('diagnosticos:') ? Math.max(ahora, (r.act || 0) + 1) : r.act || ahora;
+      meta.sucios[k] = 1;
+      anotar(k, r);
+    }
+    persistir();
+  }
+  meta.formato = FORMATO;
+  guardarMeta();
+}
 
 function marcarCambios() {
   const ahora = Date.now();
@@ -77,22 +131,24 @@ function marcarCambios() {
   let hubo = false;
   for (const [k, r] of registros()) {
     vistos.add(k);
-    const f = firma(r);
-    if (firmas.get(k) !== f) {
-      r.act = Math.max(ahora, (r.act || 0) + 1);
-      firmas.set(k, f);
+    const f = firma(k, r);
+    const prev = firmas.get(k);
+    if (!prev || prev.f !== f) {
+      // Siempre más nuevo que lo último conocido, aunque el reloj del equipo esté atrasado.
+      r.act = Math.max(ahora, (r.act || 0) + 1, (prev?.act || 0) + 1, (meta.borrados[k] || 0) + 1);
+      firmas.set(k, { f, act: r.act });
       meta.sucios[k] = 1;
       delete meta.borrados[k];
       hubo = true;
     }
   }
-  for (const k of [...firmas.keys()]) {
-    if (!vistos.has(k)) {
-      firmas.delete(k);
-      meta.borrados[k] = ahora;
-      meta.sucios[k] = 1;
-      hubo = true;
-    }
+  for (const [k, prev] of [...firmas]) {
+    if (vistos.has(k)) continue;
+    firmas.delete(k);
+    // El borrado también tiene que ser "más nuevo" que la última versión, si no el servidor lo ignora.
+    meta.borrados[k] = Math.max(ahora, (prev.act || 0) + 1);
+    meta.sucios[k] = 1;
+    hubo = true;
   }
   if (hubo) guardarMeta();
   return hubo;
@@ -103,48 +159,62 @@ export const cuandoSeGuarde = (fn) => (alGuardar = fn);
 
 export function save() {
   const hubo = marcarCambios();
-  try {
-    localStorage.setItem(KEY, JSON.stringify(db));
-  } catch {
-    return false;
-  }
+  if (!persistir()) return false;
   if (hubo) alGuardar?.();
   return true;
 }
 
 // Todo lo local pasa a "para subir" (al crear el taller en la nube o al vincular).
 export function marcarTodo({ menosTaller = false } = {}) {
+  const ahora = Date.now();
   for (const [k, r] of registros()) {
     if (menosTaller && k === 'taller:taller') continue;
-    r.act = r.act || Date.now();
+    r.act = r.act || ahora;
+    anotar(k, r);
     meta.sucios[k] = 1;
   }
+  persistir();
   guardarMeta();
 }
+
+const separar = (k) => {
+  const i = k.indexOf(':');
+  return [k.slice(0, i), k.slice(i + 1)];
+};
 
 export function paraSubir() {
   const cambios = [];
   const enviados = {};
-  const mapa = new Map(registros());
+  const mapa = new Map(registros().map(([k, r, padre]) => [k, { r, padre }]));
   for (const k of Object.keys(meta.sucios)) {
-    const [tipo, id] = k.split(':');
-    const r = mapa.get(k);
-    if (r) {
-      // Un diagnóstico vacío todavía no es nada: se sube cuando tenga algo.
+    const [tipo, id] = separar(k);
+    const x = mapa.get(k);
+    if (x) {
+      const { r, padre } = x;
+      // Lo vacío todavía no es nada: se sube cuando tenga algo.
       if (tipo === 'diagnosticos' && vacio(r)) continue;
-      cambios.push({ tipo, id, act: r.act, datos: r });
+      if (tipo === 'items' && (vacio(padre) || !r.texto.trim())) continue;
+      if (!r.act) r.act = Date.now();
+      let datos = r;
+      if (tipo === 'diagnosticos') {
+        const { items, ...resto } = r;
+        datos = resto;
+      } else if (tipo === 'items') datos = { ...r, diagId: padre.id };
+      cambios.push({ tipo, id, act: r.act, datos });
       enviados[k] = r.act;
     } else if (meta.borrados[k]) {
       cambios.push({ tipo, id, act: meta.borrados[k], borrado: true });
       enviados[k] = meta.borrados[k];
     } else delete meta.sucios[k];
   }
+  // Primero los diagnósticos, después sus fallas.
+  cambios.sort((a, b) => (a.tipo === 'items') - (b.tipo === 'items'));
   return { cambios, enviados };
 }
 
 // Limpia lo que ya subió, salvo que haya vuelto a cambiar mientras tanto.
 export function subidos(enviados) {
-  const mapa = new Map(registros());
+  const mapa = new Map(registros().map(([k, r]) => [k, r]));
   for (const [k, act] of Object.entries(enviados)) {
     const ahora = mapa.get(k)?.act ?? meta.borrados[k];
     if (ahora === act) delete meta.sucios[k];
@@ -152,18 +222,86 @@ export function subidos(enviados) {
   guardarMeta();
 }
 
-// Trae lo que cambió en otros dispositivos. Gana lo más nuevo.
+// Mismo objeto: si una pantalla lo tiene abierto, sigue apuntando a lo correcto.
+function reemplazarEnLugar(obj, datos, extra) {
+  for (const key of Object.keys(obj)) delete obj[key];
+  Object.assign(obj, datos, extra);
+}
+
+function olvidar(k, act) {
+  firmas.delete(k);
+  delete meta.sucios[k];
+  meta.borrados[k] = act;
+}
+
+function aplicarItem(c, k) {
+  let d = null;
+  let idx = -1;
+  for (const x of db.diagnosticos) {
+    idx = x.items.findIndex((it) => it.id === c.id);
+    if (idx >= 0) {
+      d = x;
+      break;
+    }
+  }
+  const local = d?.items[idx];
+  if (c.borrado) {
+    if (!local || (local.act || 0) >= c.act) return false;
+    d.items.splice(idx, 1);
+    olvidar(k, c.act);
+    return true;
+  }
+  const { diagId, ...datos } = c.datos || {};
+  if (local) {
+    if ((local.act || 0) >= c.act) return false;
+    reemplazarEnLugar(local, datos, { act: c.act });
+    anotar(k, local);
+    delete meta.sucios[k];
+    return true;
+  }
+  if ((meta.borrados[k] || 0) >= c.act) return false;
+  const padre = getDiag(diagId);
+  if (!padre) return false;
+  const nuevo = { ...datos, act: c.act };
+  padre.items.push(nuevo);
+  anotar(k, nuevo);
+  delete meta.sucios[k];
+  return true;
+}
+
+// Diagnósticos guardados con el formato anterior traen las fallas adentro:
+// se suman y quedan para subir como registros propios.
+function sumarViejas(d, viejas) {
+  let hubo = false;
+  for (const v of viejas || []) {
+    if (d.items.some((it) => it.id === v.id) || meta.borrados[`items:${v.id}`]) continue;
+    const it = { ...v };
+    migrarItem(it);
+    delete it.act;
+    d.items.push(it);
+    hubo = true;
+  }
+  return hubo;
+}
+
+// Trae lo que cambió en otros dispositivos. Gana lo más nuevo, registro por registro.
 export function aplicarRemotos(cambios = []) {
   let hubo = false;
-  for (const c of cambios) {
+  let viejasNuevas = false;
+  const ordenados = [...cambios].sort((a, b) => (a.tipo === 'items') - (b.tipo === 'items'));
+  for (const c of ordenados) {
     const k = `${c.tipo}:${c.id}`;
     if (c.tipo === 'taller') {
-      if (!c.borrado && (!db.taller || (db.taller.act || 0) < c.act)) {
-        db.taller = { ...c.datos, act: c.act };
-        firmas.set(k, firma(db.taller));
-        delete meta.sucios[k];
-        hubo = true;
-      }
+      if (c.borrado || (db.taller && (db.taller.act || 0) >= c.act)) continue;
+      if (db.taller) reemplazarEnLugar(db.taller, c.datos, { act: c.act });
+      else db.taller = { ...c.datos, act: c.act };
+      anotar(k, db.taller);
+      delete meta.sucios[k];
+      hubo = true;
+      continue;
+    }
+    if (c.tipo === 'items') {
+      if (aplicarItem(c, k)) hubo = true;
       continue;
     }
     if (!TIPOS.includes(c.tipo)) continue;
@@ -173,48 +311,39 @@ export function aplicarRemotos(cambios = []) {
     if (c.borrado) {
       if (local && (local.act || 0) < c.act) {
         lista.splice(i, 1);
-        firmas.delete(k);
-        delete meta.sucios[k];
-        meta.borrados[k] = c.act;
+        olvidar(k, c.act);
+        if (c.tipo === 'diagnosticos') for (const it of local.items) firmas.delete(`items:${it.id}`);
         hubo = true;
       }
       continue;
     }
+    const { items: viejas, ...datos } = c.datos || {};
     if (local) {
-      if ((local.act || 0) >= c.act) continue;
-      // Mismo objeto: si una pantalla lo tiene abierto, ve el cambio.
-      for (const key of Object.keys(local)) delete local[key];
-      Object.assign(local, c.datos, { act: c.act });
-      firmas.set(k, firma(local));
+      if ((local.act || 0) < c.act) {
+        if (c.tipo === 'diagnosticos') reemplazarEnLugar(local, datos, { act: c.act, items: local.items });
+        else reemplazarEnLugar(local, c.datos, { act: c.act });
+        anotar(k, local);
+        delete meta.sucios[k];
+        hubo = true;
+      }
+      if (c.tipo === 'diagnosticos' && sumarViejas(local, viejas)) hubo = viejasNuevas = true;
     } else {
       if ((meta.borrados[k] || 0) >= c.act) continue;
-      const nuevo = { ...c.datos, act: c.act };
+      const nuevo = c.tipo === 'diagnosticos' ? { ...datos, items: [], act: c.act } : { ...c.datos, act: c.act };
       lista.push(nuevo);
-      firmas.set(k, firma(nuevo));
+      anotar(k, nuevo);
+      delete meta.sucios[k];
+      if (c.tipo === 'diagnosticos' && sumarViejas(nuevo, viejas)) viejasNuevas = true;
+      hubo = true;
     }
-    delete meta.sucios[k];
-    hubo = true;
   }
-  if (hubo) {
-    try {
-      localStorage.setItem(KEY, JSON.stringify(db));
-    } catch {}
-  }
+  if (viejasNuevas) marcarCambios();
+  if (hubo) persistir();
   guardarMeta();
   return hubo;
 }
 
 export const snapshot = () => JSON.stringify(db);
-
-export function restore(json) {
-  const data = typeof json === 'string' ? JSON.parse(json) : json;
-  const b = blank();
-  for (const k in b) db[k] = data[k] ?? b[k];
-  save();
-}
-
-export const esCopiaValida = (d) =>
-  !!d && Array.isArray(d.autos) && Array.isArray(d.clientes) && Array.isArray(d.diagnosticos);
 
 export const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
@@ -302,6 +431,12 @@ export const iniciales = (nombre) =>
     .join('')
     .toUpperCase();
 
+// ---------- Precios
+
+export const fmtPrecio = (n) => `$ ${Math.round(Number(n) || 0).toLocaleString('es-AR')}`;
+export const suma = (items) => items.reduce((s, i) => s + (Number(i.precio) || 0), 0);
+export const conPrecio = (items) => items.some((i) => Number(i.precio) > 0);
+
 // ---------- Consultas
 
 export const getAuto = (id) => db.autos.find((a) => a.id === id);
@@ -321,12 +456,23 @@ export const ultimoKm = (autoId) => diagsDe(autoId).find((d) => d.km)?.km ?? nul
 
 export const nombreAuto = (a) => [a.modelo, a.anio].filter(Boolean).join(' ');
 
-// Lo pendiente sale del último diagnóstico con contenido:
-// todo lo que no está "Bien" y no se marcó como hecho.
+// Lo que hay que resolver de un diagnóstico (lo que está "Bien" no lleva trabajo).
+export const aResolver = (d) => d.items.filter((i) => i.estado !== 'bien' && i.texto.trim());
+export const hecho = (i) => i.resultado === 'hecho';
+
+// Lo que quedó sin hacer en la última visita (sin decidir, para después o no quiso):
+// se ofrece sumarlo a la próxima.
 export function pendientes(autoId, excluirId) {
   const diag = diagsDe(autoId).find((d) => d.id !== excluirId && !vacio(d));
   if (!diag) return { diag: null, items: [] };
-  return { diag, items: diag.items.filter((i) => i.estado !== 'bien' && !i.hecho && i.texto.trim()) };
+  return { diag, items: aResolver(diag).filter((i) => !hecho(i)) };
+}
+
+// Cuántas fallas hay en cada resultado.
+export function resumen(items) {
+  const r = { hecho: 0, despues: 0, no: 0, sinDefinir: 0 };
+  for (const i of items) r[i.resultado || 'sinDefinir']++;
+  return r;
 }
 
 // ---------- Semáforo y trabajo realizado
@@ -334,19 +480,20 @@ export function pendientes(autoId, excluirId) {
 export const PRIORIDAD = { urgente: 0, pronto: 1, bien: 2 };
 export const porSemaforo = (items) => [...items].sort((x, y) => PRIORIDAD[x.estado] - PRIORIDAD[y.estado]);
 
-// Checklist del auto: lo que hay que hacer según el último diagnóstico, rojo primero.
+// Checklist del auto: lo que hay que resolver según el último diagnóstico, rojo primero.
 export function trabajos(autoId) {
   const diag = diagsDe(autoId).find((d) => !vacio(d));
-  if (!diag) return { diag: null, items: [], hechos: 0 };
-  const items = porSemaforo(diag.items.filter((i) => i.estado !== 'bien' && i.texto.trim()));
-  return { diag, items, hechos: items.filter((i) => i.hecho).length };
+  if (!diag) return { diag: null, items: [], cuenta: resumen([]) };
+  const items = porSemaforo(aResolver(diag));
+  return { diag, items, cuenta: resumen(items) };
 }
 
-// Rojo: hay urgentes sin hacer. Amarillo: queda algo. Verde: al día.
+// Rojo: queda algo urgente sin hacer. Amarillo: queda algo. Verde: al día.
+// Lo que el cliente no quiso hacer sigue contando: el auto tiene la falla igual.
 export function semaforo(autoId) {
   const { diag, items } = trabajos(autoId);
   if (!diag) return null;
-  const faltan = items.filter((i) => !i.hecho);
+  const faltan = items.filter((i) => !hecho(i));
   const color = faltan.some((i) => i.estado === 'urgente') ? 'urgente' : faltan.length ? 'pronto' : 'bien';
   return { color, faltan: faltan.length };
 }
@@ -408,18 +555,42 @@ export function nuevoDiag(autoId) {
   return d;
 }
 
+// Los borrados devuelven su "Deshacer": vuelve a poner solo lo que se sacó,
+// sin tocar lo que haya cambiado mientras tanto.
 export function borrarDiag(id) {
-  db.diagnosticos = db.diagnosticos.filter((d) => d.id !== id);
+  const i = db.diagnosticos.findIndex((d) => d.id === id);
+  if (i < 0) return () => {};
+  const [d] = db.diagnosticos.splice(i, 1);
+  return () => {
+    if (!getDiag(d.id)) db.diagnosticos.push(d);
+    save();
+  };
 }
 
 export function borrarAuto(id) {
-  db.autos = db.autos.filter((a) => a.id !== id);
+  const i = db.autos.findIndex((a) => a.id === id);
+  if (i < 0) return () => {};
+  const [a] = db.autos.splice(i, 1);
+  const diags = db.diagnosticos.filter((d) => d.autoId === id);
   db.diagnosticos = db.diagnosticos.filter((d) => d.autoId !== id);
+  return () => {
+    if (!getAuto(a.id)) db.autos.push(a);
+    for (const d of diags) if (!getDiag(d.id)) db.diagnosticos.push(d);
+    save();
+  };
 }
 
 export function borrarCliente(id) {
-  db.clientes = db.clientes.filter((c) => c.id !== id);
-  for (const a of db.autos) if (a.clienteId === id) a.clienteId = null;
+  const i = db.clientes.findIndex((c) => c.id === id);
+  if (i < 0) return () => {};
+  const [c] = db.clientes.splice(i, 1);
+  const autos = db.autos.filter((a) => a.clienteId === id);
+  for (const a of autos) a.clienteId = null;
+  return () => {
+    if (!getCliente(c.id)) db.clientes.push(c);
+    for (const a of autos) if (a.clienteId == null) a.clienteId = c.id;
+    save();
+  };
 }
 
 export function limpiarVacios() {
