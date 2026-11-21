@@ -90,6 +90,7 @@ function render({ pop = false, mantener = false } = {}) {
     }
   }
   if (!el) return go('/', { replace: true });
+  pintarLateral(!v && !!S.db.taller);
   app.replaceChildren(el);
   scrollTo(0, y);
   sombraBarra();
@@ -149,14 +150,60 @@ function sombraBarra() {
 }
 addEventListener('scroll', sombraBarra, { passive: true });
 
+// ---------- Menú de la compu (a la izquierda; en el celular no se ve)
+
+let lateral = null;
+function pintarLateral(visible) {
+  document.body.classList.toggle('con-menu', visible);
+  if (!visible) return;
+  if (!lateral) {
+    const item = (r, ic, texto) =>
+      h(
+        'button',
+        { class: 'lat-item', type: 'button', 'data-ruta': r, onclick: () => rutaActual !== r && go(r) },
+        icon(ic),
+        texto,
+      );
+    lateral = h(
+      'aside',
+      { class: 'lateral', 'aria-label': 'Menú' },
+      h('div', { class: 'lat-marca' }, marca('md'), 'Gianre'),
+      h(
+        'nav',
+        { class: 'lat-nav' },
+        item('/', 'home', 'Inicio'),
+        item('/nuevo', 'add', 'Nuevo diagnóstico'),
+        item('/ajustes', 'tune', 'Ajustes'),
+      ),
+      h(
+        'div',
+        { class: 'lat-pie' },
+        estadoNube(),
+        h('button', { class: 'btn btn-gris btn-sm block', type: 'button', onclick: vincularOtro }, icon('qr'), 'Vincular el celular'),
+      ),
+    );
+    app.before(lateral);
+  }
+  const seccion = /^\/(nuevo|diag\/)/.test(rutaActual) ? '/nuevo' : rutaActual === '/ajustes' ? '/ajustes' : '/';
+  for (const b of lateral.querySelectorAll('.lat-item')) {
+    if (b.dataset.ruta === seccion) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
+  }
+}
+
 // ---------- Piezas comunes
 
 const bar = (...kids) => h('header', { class: 'bar' }, ...kids);
-const iconBtn = (name, label, onclick) =>
-  h('button', { class: 'icon-btn', type: 'button', 'aria-label': label, title: label, onclick }, icon(name));
+const iconBtn = (name, label, onclick, cls = '') =>
+  h('button', { class: `icon-btn ${cls}`, type: 'button', 'aria-label': label, title: label, onclick }, icon(name));
 const backBtn = (fallback) => iconBtn('back', 'Volver', () => volver(fallback));
-const fab = (label, onclick) => h('button', { class: 'fab', type: 'button', onclick }, icon('add'), label);
-const marca = (cls = '') => h('div', { class: `marca ${cls}`, 'aria-hidden': 'true' }, h('i'), h('i'), h('i'));
+// Ocupa el lugar del botón que falta, así el título queda al centro.
+const hueco = () => h('span', { class: 'icon-btn hueco', 'aria-hidden': 'true' });
+const barTitulo = (t) => h('div', { class: 'bar-title' }, t);
+const cta = (label, onclick) =>
+  h('div', { class: 'bottombar cta' }, h('button', { class: 'btn btn-primary', type: 'button', onclick }, icon('add'), label));
+const marca = (cls = '') =>
+  h('div', { class: `marca ${cls}`, 'aria-hidden': 'true' }, h('span', null, h('i'), h('i'), h('i')));
 const titulo = (t) => h('h2', { class: 'label' }, t);
 
 function sacudir(el) {
@@ -217,34 +264,41 @@ function confirmarBorrado({ titulo, texto, boton = 'Eliminar', alConfirmar }) {
 const identidad = (a, c, size = '') =>
   a.patente ? plate(a.patente, size) : h('span', { class: `ident ${size}` }, avatar(c, size));
 
-// Rojo/amarillo con cuántos trabajos faltan; verde cuando está al día.
-function badgeSemaforo(luz) {
-  if (luz.color === 'bien') return h('span', { class: 'pend bien', title: 'Al día' }, icon('check'));
+// Semáforo del auto: Urgente, Pronto o Al día.
+const LUZ = { urgente: 'Urgente', pronto: 'Pronto', bien: 'Al día' };
+function pillSemaforo(luz, cls = '') {
+  const faltan = luz.faltan === 1 ? 'Falta 1 trabajo' : `Faltan ${luz.faltan} trabajos`;
   return h(
     'span',
-    { class: `pend ${luz.color}`, title: luz.faltan === 1 ? 'Falta 1 trabajo' : `Faltan ${luz.faltan} trabajos` },
-    h('i'),
-    luz.faltan,
+    { class: `pill ${cls}`, 'data-estado': luz.color, title: luz.color === 'bien' ? 'Al día' : faltan },
+    h('i', { class: 'dot' }),
+    LUZ[luz.color],
   );
 }
 
 const mayusculas = (t) => t.trim().replace(/(^|\s)(\p{L})/gu, (_, s, l) => s + l.toUpperCase());
 
-function filaAuto(a, c, cuando, onclick) {
+// Tarjeta de un auto: patente, modelo y cliente, semáforo y plata que queda.
+function filaAuto(a, c, cuando, onclick, cls = '') {
   const luz = S.semaforo(a.id);
+  const trab = S.trabajos(a.id);
   const principal = S.nombreAuto(a) || c?.nombre;
   const sub = principal ? [S.nombreAuto(a) ? c?.nombre : null, cuando].filter(Boolean).join(' · ') : '';
+  const queda = S.suma(trab.items.filter((i) => !S.hecho(i)));
+  const cobrado = S.suma(trab.items.filter(S.hecho));
+  const n = trab.items.length;
   return h(
     'button',
-    { class: 'row', type: 'button', onclick: onclick || (() => go('/auto/' + a.id)) },
-    identidad(a, c),
-    h(
-      'span',
-      { class: 'row-main' },
-      h('span', { class: 'row-title' }, principal || cuando.charAt(0).toUpperCase() + cuando.slice(1)),
-      sub ? h('span', { class: 'row-sub' }, sub) : null,
-    ),
-    luz ? badgeSemaforo(luz) : null,
+    { class: `auto ${cls}`, type: 'button', 'data-estado': luz?.color, onclick: onclick || (() => go('/auto/' + a.id)) },
+    h('span', { class: 'auto-id' }, identidad(a, c)),
+    h('span', { class: 'auto-titulo' }, principal || cuando.charAt(0).toUpperCase() + cuando.slice(1)),
+    sub ? h('span', { class: 'auto-sub' }, sub) : null,
+    luz ? pillSemaforo(luz) : null,
+    queda || cobrado
+      ? h('span', { class: 'auto-monto' }, S.fmtPrecio(queda || cobrado), h('small', null, queda ? ' pendiente' : ' cobrado'))
+      : null,
+    n ? h('span', { class: 'auto-prog' }, trab.cuenta.hecho === n ? 'Todo hecho' : `${trab.cuenta.hecho} de ${n} hechos`) : null,
+    h('span', { class: 'auto-go', 'aria-hidden': 'true' }, icon('arrow')),
   );
 }
 
@@ -279,14 +333,19 @@ function bienvenida() {
       'div',
       { class: 'bienvenida-body' },
       marca(),
+      h('span', { class: 'marca-nombre' }, 'Gianre'),
       h('h1', null, '¿Cómo se llama tu taller?'),
-      h('p', { class: 'lead' }, 'Va a aparecer en cada diagnóstico que mandes.'),
+      h('p', { class: 'lead' }, 'Va a aparecer en cada presupuesto.'),
       nombre,
+      h('button', { class: 'btn btn-primary block', type: 'button', onclick: empezar }, 'Empezar', icon('flecha')),
       h('button', { class: 'btn-text ya-uso', type: 'button', onclick: tengoCodigo }, 'Ya lo uso en otro dispositivo'),
     ),
-    h('div', { class: 'bottombar' }, h('button', { class: 'btn btn-primary', type: 'button', onclick: empezar }, 'Empezar')),
   );
 }
+
+// Pantallas de un solo mensaje (vinculando, listo): mismo formato que la bienvenida.
+const pantallaCentro = (...kids) =>
+  h('div', { class: 'screen bienvenida' }, h('div', { class: 'bienvenida-body' }, marca(), h('span', { class: 'marca-nombre' }, 'Gianre'), ...kids));
 
 // ---------- Compu y celular: vincular dispositivos
 
@@ -297,11 +356,11 @@ const TEXTO_NUBE = {
   error: 'No se pudo guardar en la nube. Se reintenta solo.',
   apagado: 'Guardando…',
 };
-function estadoNube() {
-  const el = h('p', { class: 'nube pad' });
+function estadoNube(cls = '') {
+  const el = h('p', { class: `nube ${cls}`, role: 'status' });
   const pintar = (e) => {
     el.dataset.estado = e;
-    fill(el, h('i'), TEXTO_NUBE[e] || '');
+    fill(el, icon(e === 'ok' ? 'nubeOk' : 'nube'), h('span', null, TEXTO_NUBE[e] || ''));
   };
   pintar(Sync.estado);
   Sync.alCambiarEstado((e) => el.isConnected && pintar(e));
@@ -312,7 +371,7 @@ let vinculandoAhora = null;
 function vinculando(codigo) {
   const texto = h('p', { class: 'lead' }, 'Conectando con tu taller…');
   // Si la pantalla se redibuja mientras conecta, no repetir el pedido.
-  if (vinculandoAhora === codigo) return h('div', { class: 'screen bienvenida' }, h('div', { class: 'bienvenida-body' }, marca(), h('h1', null, 'Vinculando'), texto));
+  if (vinculandoAhora === codigo) return pantallaCentro(h('h1', null, 'Vinculando'), texto);
   vinculandoAhora = codigo;
   Sync.vincular(codigo)
     .finally(() => (vinculandoAhora = null))
@@ -326,16 +385,11 @@ function vinculando(codigo) {
       fill(texto, 'El código venció o no es válido. Pedí uno nuevo en el otro dispositivo.');
       fill(
         acciones,
-        h('button', { class: 'btn btn-primary', type: 'button', onclick: tengoCodigo }, 'Ingresar otro código'),
+        h('button', { class: 'btn btn-primary block', type: 'button', onclick: tengoCodigo }, 'Ingresar otro código'),
       );
     });
-  const acciones = h('div', { class: 'bottombar' });
-  return h(
-    'div',
-    { class: 'screen bienvenida' },
-    h('div', { class: 'bienvenida-body' }, marca(), h('h1', null, 'Vinculando'), texto),
-    acciones,
-  );
+  const acciones = h('div', { class: 'bienvenida-acciones' });
+  return pantallaCentro(h('h1', null, 'Vinculando'), texto, acciones);
 }
 
 // iPhone: el QR abre Safari, que no comparte datos con la app de la pantalla de inicio.
@@ -347,26 +401,20 @@ const fmtCodigo = (c) => (c.match(/.{1,4}/g) || []).join(' ');
 
 function listoEnSafari(codigo) {
   const limpio = codigo.replace(/[^a-z0-9]/gi, '').toUpperCase();
+  pintarLateral(false);
   app.replaceChildren(
-    h(
-      'div',
-      { class: 'screen bienvenida' },
+    pantallaCentro(
+      h('h1', null, 'Listo'),
+      h('p', { class: 'lead' }, '¿Tenés Gianre en la pantalla de inicio? Abrilo, tocá «Ya lo uso en otro dispositivo» y escribí:'),
+      h('div', { class: 'codigo-grande' }, fmtCodigo(limpio)),
+      limpio.length === 8 ? h('p', { class: 'hint' }, 'Vence en 15 minutos.') : null,
       h(
         'div',
-        { class: 'bienvenida-body' },
-        marca(),
-        h('h1', null, 'Listo'),
-        h('p', { class: 'lead' }, '¿Tenés Gianre en la pantalla de inicio? Abrilo, tocá «Tengo un código» y escribí:'),
-        h('div', { class: 'codigo-grande izq' }, fmtCodigo(limpio)),
-        limpio.length === 8 ? h('p', { class: 'hint' }, 'Vence en 15 minutos.') : null,
-      ),
-      h(
-        'div',
-        { class: 'bottombar' },
+        { class: 'bienvenida-acciones' },
         h(
           'button',
           {
-            class: 'btn btn-primary',
+            class: 'btn btn-primary block',
             type: 'button',
             onclick: () => {
               history.replaceState({ depth: 0 }, '', '#/');
@@ -600,52 +648,117 @@ function vincularOtro() {
 // ---------- Inicio
 
 let busqueda = '';
+let filtro = 'todos';
 
 function inicio() {
   const t = S.db.taller;
-  const lista = h('div', { class: 'list' });
+  const autos = S.db.autos;
+  const conteo = { urgente: 0, pronto: 0, bien: 0 };
+  for (const a of autos) {
+    const luz = S.semaforo(a.id);
+    if (luz) conteo[luz.color]++;
+  }
+  // Los filtros solo aparecen si hay de más de un color.
+  const colores = Object.values(conteo).filter(Boolean).length;
+  if (colores < 2 || (filtro !== 'todos' && !conteo[filtro])) filtro = 'todos';
+  const esperan = conteo.urgente + conteo.pronto;
+  const resumen = !autos.length
+    ? null
+    : esperan
+      ? esperan === 1
+        ? '1 auto espera trabajo'
+        : `${esperan} autos esperan trabajo`
+      : 'Todo al día';
+
+  const lista = h('div', { class: 'autos' });
   const dibujar = () => {
-    if (!S.db.autos.length) return lista.replaceChildren(vacioInicio());
-    const res = S.buscarAutos(busqueda, { orden: 'semaforo' });
+    if (!autos.length) return lista.replaceChildren(vacioInicio());
+    const res = S.buscarAutos(busqueda, { orden: 'semaforo' }).filter(
+      ({ a }) => filtro === 'todos' || S.semaforo(a.id)?.color === filtro,
+    );
     lista.replaceChildren(
       ...(res.length
         ? res.map(({ a, c, t }) => filaAuto(a, c, S.hace(t)))
         : [h('p', { class: 'none' }, `Sin resultados para “${busqueda.trim()}”`)]),
     );
   };
+
+  const filtros = h('nav', { class: 'filtros', 'aria-label': 'Filtrar autos', hidden: colores < 2 });
+  const pintarFiltros = () =>
+    fill(
+      filtros,
+      [
+        ['todos', 'Todos', autos.length],
+        ['urgente', 'Urgente', conteo.urgente],
+        ['pronto', 'Pronto', conteo.pronto],
+        ['bien', 'Al día', conteo.bien],
+      ].map(([k, label, n]) =>
+        k !== 'todos' && !n
+          ? null
+          : h(
+              'button',
+              {
+                class: 'filtro',
+                type: 'button',
+                'data-estado': k === 'todos' ? null : k,
+                'aria-pressed': String(filtro === k),
+                onclick: () => {
+                  filtro = k;
+                  pintarFiltros();
+                  dibujar();
+                },
+              },
+              k === 'todos' ? null : h('i', { class: 'dot' }),
+              label,
+              h('small', null, n),
+            ),
+      ),
+    );
+  pintarFiltros();
   dibujar();
-  const buscador = S.db.autos.length
-    ? h(
-        'div',
-        { class: 'search' },
-        h(
-          'label',
-          null,
-          icon('search'),
-          h('input', {
-            type: 'search',
-            value: busqueda,
-            placeholder: 'Buscar patente o cliente',
-            'aria-label': 'Buscar patente o cliente',
-            autocomplete: 'off',
-            spellcheck: 'false',
-            enterkeyhint: 'search',
-            oninput: (e) => {
-              busqueda = e.target.value;
-              dibujar();
-            },
-          }),
-        ),
-      )
-    : null;
+
+  const nuevoDiag = () => go('/nuevo');
   return h(
     'div',
-    { class: 'screen' },
-    h('header', { class: 'home-head' }, h('h1', null, t.nombre), iconBtn('settings', 'Ajustes', () => go('/ajustes'))),
-    buscador,
+    { class: 'screen inicio' },
+    h(
+      'header',
+      { class: 'home-head' },
+      h('span', { class: 'home-logo', 'aria-hidden': 'true' }, marca('sm')),
+      estadoNube(),
+      iconBtn('tune', 'Ajustes', () => go('/ajustes')),
+    ),
+    h('div', { class: 'home-saludo' }, h('h1', null, `Hola, ${t.nombre}`), resumen ? h('p', null, resumen) : null),
+    h(
+      'div',
+      { class: 'search' },
+      autos.length
+        ? h(
+            'label',
+            null,
+            icon('search'),
+            h('input', {
+              type: 'search',
+              value: busqueda,
+              placeholder: 'Buscar patente o cliente',
+              'aria-label': 'Buscar patente o cliente',
+              autocomplete: 'off',
+              spellcheck: 'false',
+              enterkeyhint: 'search',
+              oninput: (e) => {
+                busqueda = e.target.value;
+                dibujar();
+              },
+            }),
+          )
+        : null,
+      h('button', { class: 'btn btn-primary solo-compu', type: 'button', onclick: nuevoDiag }, icon('add'), 'Nuevo diagnóstico'),
+    ),
     avisoRecuperacion(),
+    filtros,
+    autos.length ? h('div', { class: 'seccion' }, h('h2', null, 'Autos'), h('span', { class: 'solo-compu' }, 'Ordenado por urgencia')) : null,
     lista,
-    fab('Nuevo diagnóstico', () => go('/nuevo')),
+    cta('Nuevo diagnóstico', nuevoDiag),
   );
 }
 
@@ -666,7 +779,6 @@ function nuevo() {
   const resultados = h('div');
 
   const campo = h('input', {
-    class: 'input big',
     placeholder: 'Patente o cliente',
     maxlength: '40',
     autocapitalize: 'words',
@@ -704,28 +816,26 @@ function nuevo() {
     const nuevoPrimero = puedeCrear && !exacto && (!matches.length || (esPatente && qp.length >= 6));
     const nueva = puedeCrear ? filaNueva(t, esPatente, qp) : null;
 
-    const filas = matches.map(({ a, c, t: ts }) => filaAuto(a, c, S.hace(ts), () => empezarCon(a)));
+    const filas = matches.map(({ a, c, t: ts }) =>
+      filaAuto(a, c, S.hace(ts), () => empezarCon(a), a === exacto ? 'exacto' : ''),
+    );
     primero = nuevoPrimero || !matches.length ? (puedeCrear ? crear : null) : () => empezarCon(matches[0].a);
 
     fill(
       resultados,
       !t && matches.length ? titulo('Recientes') : null,
-      filas.length || nueva ? h('div', { class: 'card' }, nuevoPrimero ? [nueva, filas] : [filas, nueva]) : null,
+      filas.length || nueva ? h('div', { class: 'autos' }, nuevoPrimero ? [nueva, filas] : [filas, nueva]) : null,
     );
   }
 
   function filaNueva(t, esPatente, qp) {
     return h(
       'button',
-      { class: 'row nueva', type: 'button', onclick: crear },
-      esPatente ? plate(qp) : h('span', { class: 'ident' }, avatar({ nombre: t })),
-      h(
-        'span',
-        { class: 'row-main' },
-        h('span', { class: 'row-title' }, esPatente ? 'Auto nuevo' : mayusculas(t)),
-        esPatente ? null : h('span', { class: 'row-sub' }, 'Cliente nuevo'),
-      ),
-      h('span', { class: 'go' }, icon('chevron')),
+      { class: 'auto nueva', type: 'button', onclick: crear },
+      h('span', { class: 'auto-id' }, esPatente ? plate(qp) : avatar({ nombre: t })),
+      h('span', { class: 'auto-titulo' }, esPatente ? 'Auto nuevo' : mayusculas(t)),
+      h('span', { class: 'auto-sub' }, esPatente ? 'Empezar con esta patente' : 'Cliente nuevo'),
+      h('span', { class: 'auto-go', 'aria-hidden': 'true' }, icon('add')),
     );
   }
 
@@ -749,10 +859,21 @@ function nuevo() {
 
   return h(
     'div',
-    { class: 'screen' },
-    bar(iconBtn('close', 'Cerrar', () => volver('/')), h('div', { class: 'bar-title' }, 'Nuevo diagnóstico')),
-    h('div', { class: 'pad campo-nuevo' }, campo),
-    resultados,
+    { class: 'screen angosta' },
+    bar(iconBtn('close', 'Cerrar', () => volver('/')), barTitulo('Nuevo diagnóstico'), hueco()),
+    h('div', { class: 'nuevo-titulo' }, h('h1', null, '¿Qué auto entró?'), h('p', null, 'Patente o nombre del cliente')),
+    h(
+      'label',
+      { class: 'plate-input' },
+      h(
+        'span',
+        { class: 'pl-franja', 'aria-hidden': 'true' },
+        h('span', { class: 'pl-pais' }, 'REPÚBLICA ARGENTINA'),
+        h('span', { class: 'pl-bandera' }, h('i')),
+      ),
+      campo,
+    ),
+    h('div', { class: 'lista-nuevo' }, resultados),
   );
 }
 
@@ -774,6 +895,7 @@ function editor(id) {
   const guardar = () => {
     S.save();
     marcaGuardado.hidden = false;
+    programarPrevia();
   };
   const lista = h('div', { class: 'items' });
   const filas = new Map();
@@ -1059,13 +1181,80 @@ function editor(id) {
 
   // Precios: aparecen cuando el mecánico ya los averiguó (presupuesto).
   let conPrecios = !!d.precios || S.conPrecio(d.items);
-  const totalBox = h('div', { class: 'total-fila' });
+  const totales = [];
   function sumar() {
-    const t = S.suma(d.items.filter((i) => i.texto.trim()));
-    fill(totalBox, h('span', null, 'Total'), h('b', null, S.fmtPrecio(t)));
-    totalBox.hidden = !conPrecios || !t;
+    const vivos = d.items.filter((i) => i.texto.trim());
+    const t = S.suma(vivos);
+    for (const el of totales) {
+      fill(
+        el,
+        h('span', null, 'Presupuesto'),
+        h('span', null, h('b', null, S.fmtPrecio(t)), h('small', null, vivos.length === 1 ? ' / 1 falla' : ` / ${vivos.length} fallas`)),
+      );
+      el.hidden = !conPrecios || !t;
+    }
   }
-  sumar();
+  // La tarjeta de abajo: total, ver cómo queda y enviar.
+  function tarjetaEnvio(enCelu) {
+    const total = h('div', { class: 'envio-total' });
+    totales.push(total);
+    return h(
+      'div',
+      { class: 'envio' },
+      total,
+      h(
+        'div',
+        { class: 'envio-botones' },
+        enCelu
+          ? h(
+              'button',
+              { class: 'btn-circulo btn-ojo', type: 'button', 'aria-label': 'Ver cómo queda', title: 'Ver cómo queda', onclick: () => verPrevia(d) },
+              icon('eye'),
+            )
+          : null,
+        h(
+          'button',
+          { class: 'btn btn-primary', type: 'button', onclick: () => enviar(d, enCelu ? 'png' : formatoPrevia) },
+          icon('wa'),
+          'Enviar por WhatsApp',
+        ),
+      ),
+    );
+  }
+
+  // En la compu, al lado: cómo lo recibe el cliente, al instante.
+  const previaHojas = h('div', { class: 'previa-hojas' });
+  const previaOpciones = h('div', { class: 'segmento', role: 'tablist', 'aria-label': 'Formato' });
+  let previaTimer = 0;
+  function pintarPrevia() {
+    clearTimeout(previaTimer);
+    if (!esCompu.matches || !previaHojas.isConnected) return;
+    pintarOpciones(previaOpciones, pintarPrevia);
+    if (S.vacio(d))
+      return fill(previaHojas, h('p', { class: 'previa-vacia' }, 'Escribí la primera falla y acá ves cómo le llega al cliente.'));
+    const datos = datosReporte(d);
+    const hojas = formatoPrevia === 'pdf' ? dibujarPDF(datos) : [dibujarReporte(datos)];
+    fill(
+      previaHojas,
+      S.db.taller?.logo
+        ? null
+        : h('button', { class: 'sumar-logo', type: 'button', onclick: () => elegirLogo(pintarPrevia) }, icon('image'), 'Agregar el logo del taller'),
+      h('div', { class: `hojas ${formatoPrevia}` }, hojas),
+    );
+  }
+  function programarPrevia() {
+    clearTimeout(previaTimer);
+    if (esCompu.matches) previaTimer = setTimeout(pintarPrevia, 450);
+  }
+  esCompu.addEventListener('change', pintarPrevia);
+  const salirEditor = salir;
+  salir = () => {
+    clearTimeout(previaTimer);
+    esCompu.removeEventListener('change', pintarPrevia);
+    salirEditor();
+  };
+  requestAnimationFrame(pintarPrevia);
+
   function activarPrecios() {
     if (conPrecios) return;
     conPrecios = d.precios = true;
@@ -1098,46 +1287,48 @@ function editor(id) {
     { class: `screen editor${conPrecios ? ' con-precios' : ''}` },
     bar(
       backBtn('/auto/' + a.id),
-      h(
-        'div',
-        { class: 'bar-id' },
-        identidad(a, c, 'sm'),
-        h(
-          'div',
-          { class: 'bar-id-text' },
-          h('b', null, nombre || c?.nombre || 'Diagnóstico'),
-          h(
-            'small',
-            { class: 'bar-id-sub' },
-            h('span', null, [S.fmtFecha(d.fecha), nombre ? c?.nombre : null].filter(Boolean).join(' · ')),
-            marcaGuardado,
-          ),
-        ),
-      ),
-      iconBtn('trash', 'Eliminar diagnóstico', eliminar),
+      h('div', { class: 'bar-centro' }, identidad(a, c, 'sm')),
+      iconBtn('trash', 'Eliminar diagnóstico', eliminar, 'peligro'),
     ),
-    bannerBox,
-    h(
-      'section',
-      { class: 'lista-fallas' },
-      lista,
-      h('label', { class: 'add' }, h('span', { class: 'plus' }, icon('add')), nuevoItem),
-    ),
-    totalBox,
-    h('div', { class: 'extras' }, btnPrecios, extra('Kilometraje', kmBox, km), extra('Nota', notaBox, nota)),
-    kmBox,
-    notaBox,
     h(
       'div',
-      { class: 'bottombar' },
+      { class: 'editor-titulo' },
+      h('h1', null, nombre || c?.nombre || 'Diagnóstico'),
       h(
-        'button',
-        { class: 'btn btn-ghost btn-icon', type: 'button', 'aria-label': 'Ver cómo queda', title: 'Ver cómo queda', onclick: () => verPrevia(d) },
-        icon('eye'),
+        'p',
+        { class: 'editor-sub' },
+        h('span', null, [nombre ? c?.nombre : null, S.fmtFecha(d.fecha)].filter(Boolean).join(' · ')),
+        marcaGuardado,
       ),
-      h('button', { class: 'btn btn-wa', type: 'button', onclick: () => enviar(d, 'png') }, icon('wa'), 'Enviar por WhatsApp'),
     ),
+    h(
+      'div',
+      { class: 'editor-cols' },
+      h(
+        'div',
+        { class: 'editor-main' },
+        bannerBox,
+        h(
+          'section',
+          { class: 'lista-fallas', 'aria-label': 'Fallas' },
+          lista,
+          h('label', { class: 'add' }, h('span', { class: 'plus' }, icon('add')), nuevoItem),
+        ),
+        h('div', { class: 'extras' }, btnPrecios, extra('Kilometraje', kmBox, km), extra('Nota', notaBox, nota)),
+        kmBox,
+        notaBox,
+      ),
+      h(
+        'aside',
+        { class: 'previa', 'aria-label': 'Vista previa' },
+        h('div', { class: 'previa-head' }, h('h2', null, 'Así lo recibe el cliente'), previaOpciones),
+        previaHojas,
+        tarjetaEnvio(false),
+      ),
+    ),
+    h('div', { class: 'bottombar' }, tarjetaEnvio(true)),
   );
+  sumar();
   return pantalla;
 }
 
@@ -1217,12 +1408,38 @@ function enviar(d, formato, modo = 'diagnostico') {
 
 // Vista previa: lo mismo que va a recibir el cliente, como imagen o como PDF.
 let formatoPrevia = 'png';
+const esCompu = matchMedia('(min-width: 1024px)');
+
+function pintarOpciones(el, repintar) {
+  fill(
+    el,
+    [
+      ['png', 'Imagen'],
+      ['pdf', 'PDF'],
+    ].map(([f, label]) =>
+      h(
+        'button',
+        {
+          type: 'button',
+          role: 'tab',
+          'aria-selected': String(formatoPrevia === f),
+          onclick: () => {
+            formatoPrevia = f;
+            repintar();
+          },
+        },
+        label,
+      ),
+    ),
+  );
+}
+
 function verPrevia(d) {
   document.activeElement?.blur?.();
   if (borradoEnOtro(d)) return;
   if (S.vacio(d)) return snack('El diagnóstico está vacío');
   const cuerpo = h('div', { class: 'viewer-body' });
-  const opciones = h('div', { class: 'segmento', role: 'tablist' });
+  const opciones = h('div', { class: 'segmento', role: 'tablist', 'aria-label': 'Formato' });
   function pintar() {
     const datos = datosReporte(d);
     const hojas = formatoPrevia === 'pdf' ? dibujarPDF(datos) : [dibujarReporte(datos)];
@@ -1242,41 +1459,21 @@ function verPrevia(d) {
           ),
       h('div', { class: `hojas ${formatoPrevia}` }, hojas),
     );
-    fill(
-      opciones,
-      [
-        ['png', 'Imagen'],
-        ['pdf', 'PDF'],
-      ].map(([f, label]) =>
-        h(
-          'button',
-          {
-            type: 'button',
-            role: 'tab',
-            'aria-selected': String(formatoPrevia === f),
-            onclick: () => {
-              formatoPrevia = f;
-              pintar();
-            },
-          },
-          label,
-        ),
-      ),
-    );
+    pintarOpciones(opciones, pintar);
   }
   pintar();
   abrirCapa(
     h(
       'div',
       { class: 'layer viewer' },
-      bar(iconBtn('close', 'Cerrar', () => cerrarCapa()), h('div', { class: 'bar-title' }, 'Vista previa'), opciones),
+      bar(iconBtn('close', 'Cerrar', () => cerrarCapa()), barTitulo('Vista previa'), opciones),
       cuerpo,
       h(
         'div',
         { class: 'bottombar' },
         h(
           'button',
-          { class: 'btn btn-wa', type: 'button', onclick: () => enviar(d, formatoPrevia) },
+          { class: 'btn btn-primary', type: 'button', onclick: () => enviar(d, formatoPrevia) },
           icon('wa'),
           'Enviar por WhatsApp',
         ),
@@ -1294,97 +1491,134 @@ function fichaAuto(id) {
   const trab = S.trabajos(a.id);
   const diags = S.diagsDe(a.id).filter((d) => !S.vacio(d));
   const km = S.ultimoKm(a.id);
+  const luz = S.semaforo(a.id);
   const wa = S.waNumber(c?.telefono);
-  const detalle = [a.anio, km ? `${S.fmtKm(km)} km` : null].filter(Boolean).join(' · ');
+  const tel = (c?.telefono || '').replace(/[^\d+]/g, '');
+  const nombre = S.nombreAuto(a);
+  const n = trab.items.length;
+
+  const nuevoDiag = () => {
+    const d = S.nuevoDiag(a.id);
+    go('/diag/' + d.id);
+  };
+
+  // Kilometraje, visitas y cuántos trabajos se hicieron: solo lo que hay.
+  const stats = [
+    km ? ['speed', 'Kilometraje', S.fmtKm(km), ''] : null,
+    diags.length ? ['history', diags.length === 1 ? 'Visita' : 'Visitas', diags.length, ''] : null,
+    n ? ['done', 'Hechos', `${trab.cuenta.hecho} de ${n}`, trab.cuenta.hecho === n ? 'ok' : ''] : null,
+  ].filter(Boolean);
 
   const cliente = c
     ? h(
         'div',
-        { class: 'card card-split' },
+        { class: 'cliente-card' },
         h(
           'button',
-          { class: 'row', type: 'button', onclick: () => go('/cliente/' + c.id) },
-          avatar(c),
-          h(
-            'span',
-            { class: 'row-main' },
-            h('span', { class: 'row-title' }, c.nombre || 'Sin nombre'),
-            c.telefono ? h('span', { class: 'row-sub' }, c.telefono) : null,
-          ),
+          { class: 'cliente-info', type: 'button', onclick: () => go('/cliente/' + c.id) },
+          h('small', null, 'Cliente'),
+          h('b', null, c.nombre || 'Sin nombre'),
+          c.telefono ? h('span', null, c.telefono) : null,
         ),
         wa
           ? h(
               'a',
               {
-                class: 'icon-btn wa',
+                class: 'btn-circulo chico wa',
                 href: `https://wa.me/${wa}`,
                 target: '_blank',
                 rel: 'noopener',
                 'aria-label': 'Abrir chat de WhatsApp',
-                title: 'Abrir chat',
+                title: 'Abrir chat de WhatsApp',
               },
               icon('wa'),
             )
           : null,
+        tel ? h('a', { class: 'btn-circulo chico', href: `tel:${tel}`, 'aria-label': 'Llamar', title: 'Llamar' }, icon('phone')) : null,
+      )
+    : h(
+        'button',
+        { class: 'cliente-card falta', type: 'button', onclick: () => asignarCliente(a) },
+        h('span', { class: 'btn-circulo' }, icon('add')),
+        'Agregar cliente',
+      );
+
+  // Abajo: si ya marcaron algo, se manda el trabajo realizado; si no, se arranca otro diagnóstico.
+  const resueltos = trab.cuenta.hecho || trab.cuenta.despues || trab.cuenta.no;
+  const abajo = resueltos
+    ? h(
+        'div',
+        { class: 'envio' },
+        totalesTrabajo(trab.items),
+        h(
+          'div',
+          { class: 'envio-botones' },
+          h(
+            'button',
+            { class: 'btn-circulo', type: 'button', 'aria-label': 'Nuevo diagnóstico', title: 'Nuevo diagnóstico', onclick: nuevoDiag },
+            icon('add'),
+          ),
+          h(
+            'button',
+            { class: 'btn btn-primary', type: 'button', onclick: () => enviar(trab.diag, 'png', 'trabajo') },
+            icon('wa'),
+            'Enviar trabajo realizado',
+          ),
+        ),
       )
     : h(
         'div',
-        { class: 'card' },
-        h(
-          'button',
-          { class: 'row', type: 'button', onclick: () => asignarCliente(a) },
-          h('span', { class: 'avatar mas' }, icon('add')),
-          h('span', { class: 'row-main' }, h('span', { class: 'row-title' }, 'Agregar cliente')),
-        ),
+        { class: 'envio solo' },
+        h('div', { class: 'envio-botones' }, h('button', { class: 'btn btn-primary', type: 'button', onclick: nuevoDiag }, icon('add'), 'Nuevo diagnóstico')),
       );
 
   return h(
     'div',
-    { class: 'screen' },
-    bar(backBtn('/'), h('div', { class: 'bar-title' }), iconBtn('edit', 'Editar auto', () => editarAuto(a))),
+    { class: 'screen ficha' },
+    bar(backBtn('/'), barTitulo('Ficha del auto'), iconBtn('edit', 'Editar auto', () => editarAuto(a))),
     h(
-      'section',
-      { class: 'hero' },
-      a.patente
-        ? plate(a.patente, 'lg')
-        : h('button', { class: 'plate lg falta', type: 'button', onclick: () => editarAuto(a) }, h('b', null, '+ Patente')),
-      a.modelo ? h('h1', null, a.modelo) : null,
-      detalle ? h('p', null, detalle) : null,
+      'div',
+      { class: 'ficha-cols' },
+      h(
+        'div',
+        { class: 'ficha-izq' },
+        h(
+          'section',
+          { class: 'hero-auto', 'data-estado': luz?.color },
+          a.patente
+            ? plate(a.patente, 'lg')
+            : h('button', { class: 'plate-falta', type: 'button', onclick: () => editarAuto(a) }, '+ Patente'),
+        ),
+        h(
+          'div',
+          { class: 'hero-linea' },
+          nombre
+            ? h('h1', null, nombre)
+            : h('button', { class: 'h1-falta', type: 'button', onclick: () => editarAuto(a) }, '+ Marca y modelo'),
+          luz ? pillSemaforo(luz, 'grande') : null,
+        ),
+        stats.length
+          ? h(
+              'div',
+              { class: 'stats' },
+              stats.map(([ic, lbl, val, cls]) =>
+                h('div', { class: `stat ${cls}` }, h('span', { class: 'stat-ic' }, icon(ic)), h('span', { class: 'stat-lbl' }, lbl), h('b', null, val)),
+              ),
+            )
+          : null,
+        cliente,
+      ),
+      h(
+        'div',
+        { class: 'ficha-der' },
+        // Checklist punto por punto, rojo primero. Cada falla termina en
+        // Hecho, Después (queda para otra visita) o No quiso (el cliente no lo hizo).
+        n ? [titulo('Trabajos'), h('div', { class: 'trabajos' }, trab.items.map(filaTrabajo))] : null,
+        titulo('Historial clínico'),
+        diags.length ? h('div', { class: 'card' }, diags.map(filaHistorial)) : h('p', { class: 'none' }, 'Sin diagnósticos todavía'),
+      ),
     ),
-    cliente,
-    // Checklist punto por punto, rojo primero. Cada falla termina en
-    // Hecho, Después (queda para otra visita) o No quiso (el cliente no lo hizo).
-    trab.items.length
-      ? [
-          h(
-            'h2',
-            { class: 'label label-row' },
-            'Trabajos',
-            h('span', { class: 'progreso' }, `${trab.cuenta.hecho} de ${trab.items.length} hechos`),
-          ),
-          h('div', { class: 'card trabajos' }, trab.items.map(filaTrabajo), totalesTrabajo(trab.items)),
-          trab.cuenta.hecho || trab.cuenta.despues || trab.cuenta.no
-            ? h(
-                'div',
-                { class: 'pad accion-trabajo' },
-                h(
-                  'button',
-                  { class: 'btn btn-ghost block', type: 'button', onclick: () => enviar(trab.diag, 'png', 'trabajo') },
-                  icon('wa'),
-                  'Enviar trabajo realizado',
-                ),
-              )
-            : null,
-        ]
-      : null,
-    titulo('Historial clínico'),
-    diags.length
-      ? h('div', { class: 'card' }, diags.map(filaHistorial))
-      : h('p', { class: 'none' }, 'Sin diagnósticos todavía'),
-    fab('Nuevo diagnóstico', () => {
-      const d = S.nuevoDiag(a.id);
-      go('/diag/' + d.id);
-    }),
+    h('div', { class: 'bottombar' }, abajo),
   );
 }
 
@@ -1444,9 +1678,9 @@ function totalesTrabajo(items) {
   const quedan = S.suma(items.filter((i) => !S.hecho(i)));
   return h(
     'div',
-    { class: 'totales' },
-    h('span', null, 'Hecho ', h('b', null, S.fmtPrecio(hechos))),
-    h('span', null, 'Queda ', h('b', null, S.fmtPrecio(quedan))),
+    { class: 'envio-total' },
+    h('span', { class: 'hecho' }, 'Hecho ', h('b', null, S.fmtPrecio(hechos))),
+    h('span', { class: 'queda' }, 'Queda ', h('b', null, S.fmtPrecio(quedan))),
   );
 }
 
@@ -1583,8 +1817,8 @@ function fichaCliente(id) {
   const tel = (c.telefono || '').replace(/[^\d+]/g, '');
   return h(
     'div',
-    { class: 'screen' },
-    bar(backBtn('/'), h('div', { class: 'bar-title' }), iconBtn('edit', 'Editar cliente', () => editarCliente(c))),
+    { class: 'screen ficha-cliente' },
+    bar(backBtn('/'), barTitulo('Cliente'), iconBtn('edit', 'Editar cliente', () => editarCliente(c))),
     h(
       'section',
       { class: 'hero' },
@@ -1598,25 +1832,25 @@ function fichaCliente(id) {
             wa
               ? h(
                   'a',
-                  { class: 'btn btn-ghost', href: `https://wa.me/${wa}`, target: '_blank', rel: 'noopener' },
+                  { class: 'btn btn-wa', href: `https://wa.me/${wa}`, target: '_blank', rel: 'noopener' },
                   icon('wa'),
                   'WhatsApp',
                 )
               : null,
-            h('a', { class: 'btn btn-ghost', href: `tel:${tel}` }, icon('phone'), 'Llamar'),
+            h('a', { class: 'btn btn-gris', href: `tel:${tel}` }, icon('phone'), 'Llamar'),
           )
         : null,
     ),
     titulo(autos.length === 1 ? 'Auto' : 'Autos'),
     h(
       'div',
-      { class: 'card' },
+      { class: 'autos' },
       autos.map(({ a, t }) => filaAuto(a, null, S.hace(t))),
       h(
         'button',
-        { class: 'row', type: 'button', onclick: () => agregarAuto(c) },
-        h('span', { class: 'avatar mas' }, icon('add')),
-        h('span', { class: 'row-main' }, h('span', { class: 'row-title' }, 'Agregar auto')),
+        { class: 'auto nueva', type: 'button', onclick: () => agregarAuto(c) },
+        h('span', { class: 'auto-id' }, h('span', { class: 'avatar mas' }, icon('add'))),
+        h('span', { class: 'auto-titulo' }, 'Agregar auto'),
       ),
     ),
   );
@@ -1774,8 +2008,8 @@ function ajustes() {
 
   return h(
     'div',
-    { class: 'screen' },
-    bar(backBtn('/'), h('div', { class: 'bar-title' }, 'Ajustes')),
+    { class: 'screen angosta' },
+    bar(backBtn('/'), barTitulo('Ajustes'), hueco()),
     titulo('Taller'),
     h(
       'div',
@@ -1814,7 +2048,7 @@ function ajustes() {
     ),
     h('div', { class: 'fields pad' }, field('Nombre', nombre), field('WhatsApp', tel), field('Dirección', dir)),
     titulo('Compu y celular'),
-    estadoNube(),
+    estadoNube('pad'),
     h(
       'div',
       { class: 'card' },

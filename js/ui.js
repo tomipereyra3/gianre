@@ -63,6 +63,20 @@ const PATHS = {
     'M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 2H5v-2h2v2zm0-3H5V8h2v2zm9 7H8v-2h8v2zm0-4h-2v-2h2v2zm0-3h-2V8h2v2zm3 3h-2v-2h2v2zm0-3h-2V8h2v2z',
   image:
     'M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z',
+  arrow: 'M6 6v2h8.59L5 17.59 6.41 19 16 9.41V18h2V6z',
+  flecha: 'M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z',
+  home: 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z',
+  tune: 'M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z',
+  history:
+    'M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.95 8.95 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z',
+  speed:
+    'M20.38 8.57l-1.23 1.85a8 8 0 0 1-.22 7.58H5.07A8 8 0 0 1 15.58 6.85l1.85-1.23A10 10 0 0 0 3.35 19a2 2 0 0 0 1.72 1h13.85a2 2 0 0 0 1.74-1 10 10 0 0 0-.27-10.44zm-9.79 6.84a2 2 0 0 0 2.83 0l5.66-8.49-8.49 5.66a2 2 0 0 0 0 2.83z',
+  done:
+    'M22 5.18 10.59 16.6l-4.24-4.24 1.41-1.41 2.83 2.83 10-10L22 5.18zm-2.21 5.04c.13.57.21 1.17.21 1.78 0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8c1.58 0 3.04.46 4.28 1.25l1.44-1.44A9.9 9.9 0 0 0 12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10c0-1.19-.22-2.33-.6-3.39l-1.61 1.61z',
+  nube:
+    'M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.99 5.99 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z',
+  nubeOk:
+    'M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.99 5.99 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM10 17l-3.5-3.5 1.41-1.41L10 14.17 15.18 9l1.41 1.41L10 17z',
   wa: 'M17.47 14.38c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.67.15-.2.3-.77.97-.94 1.16-.17.2-.35.22-.64.07-.3-.15-1.26-.46-2.39-1.47-.88-.79-1.48-1.76-1.65-2.06-.17-.3-.02-.46.13-.6.13-.14.3-.35.45-.52.15-.17.2-.3.3-.5.1-.2.05-.37-.03-.52-.07-.15-.67-1.61-.92-2.2-.24-.58-.49-.5-.67-.51h-.57c-.2 0-.52.07-.79.37-.27.3-1.04 1.02-1.04 2.48s1.07 2.88 1.21 3.07c.15.2 2.1 3.2 5.08 4.49.71.31 1.26.49 1.7.63.71.22 1.36.19 1.87.12.57-.09 1.76-.72 2-1.41.25-.7.25-1.29.18-1.41-.08-.13-.28-.2-.57-.35m-5.42 7.4h-.01a9.87 9.87 0 0 1-5.03-1.38l-.36-.21-3.74.98 1-3.65-.24-.37a9.86 9.86 0 0 1-1.51-5.26c0-5.45 4.44-9.88 9.89-9.88 2.64 0 5.12 1.03 6.99 2.9a9.83 9.83 0 0 1 2.89 6.99c0 5.45-4.44 9.88-9.88 9.88m8.41-18.3A11.82 11.82 0 0 0 12.05 0C5.5 0 .16 5.34.16 11.89c0 2.1.55 4.14 1.59 5.95L.06 24l6.3-1.65a11.88 11.88 0 0 0 5.68 1.45h.01c6.55 0 11.89-5.34 11.89-11.89 0-3.18-1.24-6.17-3.48-8.41z',
 };
 
@@ -80,10 +94,62 @@ export function icon(name) {
 
 // ---------- Piezas
 
+// Patentes argentinas: Mercosur (blanca, franja azul) y la anterior (negra, en relieve).
+const MERCOSUR =
+  '<path d="M19 1.3 19.62 2.88 21.2 3.5 19.62 4.12 19 5.7 18.38 4.12 16.8 3.5 18.38 2.88Z"/>' +
+  '<path d="M24.5 5.2 25 6.5 26.3 7 25 7.5 24.5 8.8 24 7.5 22.7 7 24 6.5Z"/>' +
+  '<path d="M20.5 10 21.06 11.44 22.5 12 21.06 12.56 20.5 14 19.94 12.56 18.5 12 19.94 11.44Z"/>' +
+  '<path d="M15 6.9 15.45 8.05 16.6 8.5 15.45 8.95 15 10.1 14.55 8.95 13.4 8.5 14.55 8.05Z"/>' +
+  '<path d="M5 18.5Q20 13 35 17" stroke="#3FAF6A" stroke-width="1.3" fill="none"/>' +
+  '<text x="20" y="25" text-anchor="middle" font-size="6.2" font-weight="600">MERCOSUR</text>';
+const ESCUDO =
+  '<ellipse cx="10" cy="15" rx="7" ry="9" fill="#FFFFFF" stroke="#1F5FA0" stroke-width="1"/>' +
+  '<path d="M3 15A7 9 0 0 1 17 15Z" fill="#74ACDF"/>' +
+  '<path d="M7 6.5Q10 2.5 13 6.5Z" fill="#C8102E"/>' +
+  '<path d="M2.5 16Q2 22 9 24.5M17.5 16Q18 22 11 24.5" stroke="#3E8E41" stroke-width="1.2" fill="none"/>';
+
+function dibujo(markup, cls, viewBox) {
+  const s = document.createElementNS(NS, 'svg');
+  s.setAttribute('viewBox', viewBox);
+  s.setAttribute('class', cls);
+  s.setAttribute('aria-hidden', 'true');
+  s.innerHTML = markup;
+  return s;
+}
+
+const ranura = (cls) => h('i', { class: `pl-ranura ${cls}`, 'aria-hidden': 'true' });
+
 export function plate(patente, size = '') {
   const txt = fmtPatente(patente);
-  const cls = ['plate', size, esPatenteVieja(patente) ? 'old' : '', txt ? '' : 'none'].join(' ');
-  return h('span', { class: cls }, h('b', null, txt || 'S/P'));
+  if (!txt) return h('span', { class: `plate none ${size}` }, h('span', { class: 'pl-txt' }, h('b', null, 'S/P')));
+  const nombre = { role: 'img', 'aria-label': `Patente ${txt}` };
+  if (esPatenteVieja(patente)) {
+    return h(
+      'span',
+      { class: `plate v ${size}`, ...nombre },
+      dibujo(ESCUDO, 'pl-escudo', '0 0 20 26'),
+      ranura('a'),
+      ranura('b'),
+      ranura('c'),
+      ranura('d'),
+      h('span', { class: 'pl-pais', 'aria-hidden': 'true' }, 'ARGENTINA'),
+      h('span', { class: 'pl-txt' }, h('b', null, txt)),
+    );
+  }
+  return h(
+    'span',
+    { class: `plate m ${size}`, ...nombre },
+    h(
+      'span',
+      { class: 'pl-franja', 'aria-hidden': 'true' },
+      dibujo(MERCOSUR, 'pl-mercosur', '0 0 40 26'),
+      ranura('a'),
+      ranura('b'),
+      h('span', { class: 'pl-pais' }, 'REPÚBLICA ARGENTINA'),
+      h('span', { class: 'pl-bandera' }, h('i')),
+    ),
+    h('span', { class: 'pl-txt' }, h('b', null, txt)),
+  );
 }
 
 export function avatar(c, size = '') {
