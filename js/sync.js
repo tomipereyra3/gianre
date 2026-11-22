@@ -196,8 +196,9 @@ export async function entrarConSesion(token, email = emailDelToken(token)) {
   await usarClave(clave, null);
 }
 
-export async function entrarConEmail(email, codigo) {
+export async function entrarConEmail(email, codigo, alVerificar) {
   const sesion = await auth('verify', { type: 'email', email, token: codigo });
+  alVerificar?.();
   return entrarConSesion(sesion.access_token, email);
 }
 

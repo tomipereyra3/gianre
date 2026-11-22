@@ -57,17 +57,32 @@ const scrolls = {};
 const ruta = () => location.hash.slice(1) || '/';
 const profundidad = () => history.state?.depth ?? 0;
 
-function go(p, { replace = false } = {}) {
+// Mientras está el logo del arranque no se anima el paso entre pantallas.
+let arrancando = true;
+
+// Cambiar de sección del mismo vehículo es una pestaña, no una pantalla nueva.
+const autoDe = (r) => r?.match(/^\/auto\/(\w+)/)?.[1];
+
+function go(p, { replace = false, nav } = {}) {
+  const antes = rutaActual;
   history[replace ? 'replaceState' : 'pushState']({ depth: profundidad() + (replace ? 0 : 1) }, '', '#' + p);
-  render();
+  nav ??= !replace ? 'adelante' : autoDe(antes) && autoDe(antes) === autoDe(p) ? 'pestana' : null;
+  render({ nav });
 }
 
 function volver(fallback = '/') {
   if (profundidad() > 0) history.back();
-  else go(fallback, { replace: true });
+  else go(fallback, { replace: true, nav: 'atras' });
 }
 
-function render({ pop = false, mantener = false } = {}) {
+// En el celular: la pantalla nueva entra deslizando (o con fundido entre pestañas).
+const animarPantallas = () =>
+  typeof document.startViewTransition === 'function' &&
+  !matchMedia('(prefers-reduced-motion: reduce)').matches &&
+  !matchMedia('(min-width: 1024px)').matches;
+let transiciones = 0;
+
+function render({ pop = false, mantener = false, nav = pop ? 'atras' : null } = {}) {
   // Redibujar la misma pantalla (por un cambio que llegó) no es salir de ella.
   const misma = mantener && ruta() === rutaActual;
   // Lo que estaba escrito en un campo se guarda antes de cambiar de pantalla.
@@ -93,10 +108,27 @@ function render({ pop = false, mantener = false } = {}) {
     }
   }
   if (!el) return go('/', { replace: true });
-  pintarLateral(!v && !!S.db.taller);
-  app.replaceChildren(el);
-  scrollTo(0, y);
-  sombraBarra();
+  const aplicar = () => {
+    pintarLateral(!v && !!S.db.taller);
+    app.replaceChildren(el);
+    scrollTo(0, y);
+    sombraBarra();
+  };
+  // Si la pantalla nueva abre el teclado, va sin animación: iOS solo lo abre en el mismo toque.
+  let animada = false;
+  if (nav && !mantener && !enfocar && !arrancando && animarPantallas()) {
+    const raiz = document.documentElement;
+    const n = ++transiciones;
+    raiz.dataset.nav = nav;
+    const fin = () => n === transiciones && delete raiz.dataset.nav;
+    try {
+      document.startViewTransition(aplicar).finished.then(fin, fin);
+      animada = true;
+    } catch {
+      fin();
+    }
+  }
+  if (!animada) aplicar();
   // Enfocar en el mismo toque que abrió la pantalla: así el teclado sube solo (iOS incluido).
   // Si solo se redibujó por un cambio que llegó, no se abre el teclado.
   if (enfocar && !misma) enfocar.focus({ preventScroll: true });
@@ -133,7 +165,7 @@ function quitarCapa() {
   const el = capa;
   capa = null;
   el.classList.add('closing');
-  setTimeout(() => el.remove(), 200);
+  setTimeout(() => el.remove(), 220);
   document.documentElement.classList.remove('locked');
 }
 
@@ -458,10 +490,13 @@ function pasosEmail(contenedor, alTerminar) {
       entrando = true;
       boton.disabled = true;
       fill(boton, 'Entrando…');
+      // Sin datos en este equipo: apenas el código es válido se ve la pantalla cargando.
+      const antes = S.db.taller ? null : [...app.childNodes];
       try {
-        await Sync.entrarConEmail(email, c);
+        await Sync.entrarConEmail(email, c, () => antes && app.replaceChildren(esqueletoInicio()));
         alTerminar();
       } catch (e) {
+        if (antes) app.replaceChildren(...antes);
         entrando = false;
         boton.disabled = false;
         fill(boton, 'Entrar');
@@ -569,9 +604,8 @@ function estadoNube(cls = '') {
 
 let vinculandoAhora = null;
 function vinculando(codigo) {
-  const texto = h('p', { class: 'lead' }, 'Descargando los datos de tu taller…');
   // Si la pantalla se redibuja mientras conecta, no repetir el pedido.
-  if (vinculandoAhora === codigo) return pantallaCentro(h('h1', null, 'Conectando dispositivo'), texto);
+  if (vinculandoAhora === codigo) return esqueletoInicio();
   vinculandoAhora = codigo;
   Sync.vincular(codigo)
     .finally(() => (vinculandoAhora = null))
@@ -582,14 +616,60 @@ function vinculando(codigo) {
       snack('Dispositivo conectado. Ya tenés los mismos datos.');
     })
     .catch(() => {
-      fill(texto, 'El código venció o no es válido. Pedí uno nuevo en el otro dispositivo.');
-      fill(
-        acciones,
-        h('button', { class: 'btn btn-primary block', type: 'button', onclick: tengoCodigo }, 'Ingresar otro código'),
+      app.replaceChildren(
+        pantallaCentro(
+          h('h1', null, 'No se pudo conectar'),
+          h('p', { class: 'lead' }, 'El código venció o no es válido. Pedí uno nuevo en el otro dispositivo.'),
+          h(
+            'div',
+            { class: 'bienvenida-acciones' },
+            h('button', { class: 'btn btn-primary block', type: 'button', onclick: tengoCodigo }, 'Ingresar otro código'),
+          ),
+        ),
       );
     });
-  const acciones = h('div', { class: 'bienvenida-acciones' });
-  return pantallaCentro(h('h1', null, 'Conectando dispositivo'), texto, acciones);
+  return esqueletoInicio();
+}
+
+// Mientras bajan los datos del taller: la pantalla de vehículos con bloques que titilan.
+function esqueletoInicio() {
+  const sk = (ancho, alto, d = 0, cls = '') =>
+    h('span', { class: `sk ${cls}`, style: `width:${ancho};height:${alto}px;animation-delay:${d}ms` });
+  const anchos = [['78%', '52%'], ['62%', '40%'], ['84%', '58%'], ['68%', '46%'], ['58%', '50%'], ['74%', '42%']];
+  return h(
+    'div',
+    { class: 'screen inicio cargando', 'aria-busy': 'true' },
+    h('p', { class: 'solo-lector', role: 'status' }, 'Cargando vehículos…'),
+    h(
+      'header',
+      { class: 'home-head' },
+      h(
+        'div',
+        { class: 'home-taller' },
+        h('img', { class: 'marca-logo', src: 'logo-gianre.svg', alt: 'Gianre hnos', width: '124', height: '27' }),
+        sk('176px', 12),
+      ),
+    ),
+    h('div', { class: 'home-saludo' }, h('h1', null, 'Vehículos'), sk('214px', 14)),
+    h(
+      'div',
+      { class: 'search' },
+      h('label', null, icon('search'), h('input', { placeholder: 'Buscar patente, cliente o modelo', disabled: true, 'aria-hidden': 'true' })),
+    ),
+    h(
+      'div',
+      { class: 'autos', 'aria-hidden': 'true' },
+      anchos.map(([w1, w2], i) =>
+        h(
+          'div',
+          { class: 'sk-fila' },
+          sk('92px', 30, i * 70, 'claro'),
+          h('span', { class: 'sk-textos' }, sk(w1, 13, i * 70, 'claro'), sk(w2, 10, i * 70, 'claro')),
+          h('span', { class: 'sk-lado' }, sk('64px', 20, i * 70, 'claro'), sk('50px', 10, i * 70, 'claro')),
+        ),
+      ),
+    ),
+  );
 }
 
 // iPhone: el QR abre Safari, que no comparte datos con la app de la pantalla de inicio.
@@ -2726,8 +2806,24 @@ const mail = vueltaDelMail();
 if (mail) history.replaceState({ depth: 0 }, '', location.pathname + location.search + '#/');
 if (!history.state) history.replaceState({ depth: 0 }, '', location.hash || '#/');
 render();
+// Arranque: el logo se queda un momento y, al irse, entra la pantalla de a partes.
+{
+  const splash = document.getElementById('splash');
+  setTimeout(
+    () => {
+      splash?.classList.add('fuera');
+      app.classList.add('arranque');
+      setTimeout(() => {
+        splash?.remove();
+        app.classList.remove('arranque');
+        arrancando = false;
+      }, 900);
+    },
+    Math.max(0, 650 - performance.now()),
+  );
+}
 if (mail?.token) {
-  app.replaceChildren(pantallaCentro(h('h1', null, 'Entrando…')));
+  app.replaceChildren(esqueletoInicio());
   Sync.entrarConSesion(mail.token)
     .then(() => {
       render();

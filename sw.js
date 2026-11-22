@@ -1,5 +1,5 @@
 // Funciona sin señal: primero la red, si no hay, lo guardado.
-const CACHE = 'gianre-v21';
+const CACHE = 'gianre-v22';
 const BASE = [
   './',
   './index.html',
@@ -11,6 +11,7 @@ const BASE = [
   './js/sync.js',
   './manifest.webmanifest',
   './icon.svg',
+  './logo-gianre.svg',
 ];
 
 self.addEventListener('install', (e) => {
