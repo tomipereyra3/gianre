@@ -825,7 +825,6 @@ function vincularOtro() {
 // ---------- Inicio
 
 let busqueda = '';
-let filtro = 'todos';
 
 function inicio() {
   const t = S.db.taller;
@@ -835,9 +834,6 @@ function inicio() {
     const luz = S.semaforo(a.id);
     if (luz) conteo[luz.color]++;
   }
-  // Los filtros solo aparecen si hay de más de un color.
-  const colores = Object.values(conteo).filter(Boolean).length;
-  if (colores < 2 || (filtro !== 'todos' && !conteo[filtro])) filtro = 'todos';
   const esperan = conteo.urgente + conteo.pronto;
   const resumen = !autos.length
     ? null
@@ -850,9 +846,7 @@ function inicio() {
   const lista = h('div', { class: 'autos' });
   const dibujar = () => {
     if (!autos.length) return lista.replaceChildren(vacioInicio());
-    const res = S.buscarAutos(busqueda, { orden: 'semaforo' }).filter(
-      ({ a }) => filtro === 'todos' || S.semaforo(a.id)?.color === filtro,
-    );
+    const res = S.buscarAutos(busqueda, { orden: 'semaforo' });
     lista.replaceChildren(
       ...(res.length
         ? res.map(({ a, c, t }) => filaAuto(a, c, S.hace(t)))
@@ -860,38 +854,6 @@ function inicio() {
     );
   };
 
-  const filtros = h('nav', { class: 'filtros', 'aria-label': 'Filtrar vehículos por estado', hidden: colores < 2 });
-  const pintarFiltros = () =>
-    fill(
-      filtros,
-      [
-        ['todos', 'Todos', autos.length],
-        ['urgente', 'Urgente', conteo.urgente],
-        ['pronto', 'Pronto', conteo.pronto],
-        ['bien', 'Al día', conteo.bien],
-      ].map(([k, label, n]) =>
-        k !== 'todos' && !n
-          ? null
-          : h(
-              'button',
-              {
-                class: 'filtro',
-                type: 'button',
-                'data-estado': k === 'todos' ? null : k,
-                'aria-pressed': String(filtro === k),
-                onclick: () => {
-                  filtro = k;
-                  pintarFiltros();
-                  dibujar();
-                },
-              },
-              k === 'todos' ? null : h('i', { class: 'dot' }),
-              label,
-              h('small', null, n),
-            ),
-      ),
-    );
-  pintarFiltros();
   dibujar();
 
   const nuevoDiag = () => go('/nuevo');
@@ -932,7 +894,6 @@ function inicio() {
       h('button', { class: 'btn btn-primary solo-compu', type: 'button', onclick: nuevoDiag }, icon('add'), 'Crear diagnóstico'),
     ),
     avisoCuenta(),
-    filtros,
     lista,
     cta('Crear diagnóstico', nuevoDiag),
   );

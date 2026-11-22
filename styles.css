@@ -918,55 +918,6 @@ input::-webkit-calendar-picker-indicator {
   }
 }
 
-.filtros {
-  display: flex;
-  gap: 10px;
-  padding: 2px 20px 4px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.filtros::-webkit-scrollbar {
-  display: none;
-}
-
-.filtro {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 44px;
-  padding: 0 18px;
-  border-radius: 22px;
-  background: var(--surface-2);
-  box-shadow: inset 0 0 0 1px var(--line);
-  color: #e4e4dd;
-  font-size: 15px;
-  font-weight: 500;
-}
-
-.filtro .dot {
-  width: 8px;
-  height: 8px;
-}
-
-.filtro small {
-  font-size: 13px;
-  color: var(--muted);
-  font-weight: 600;
-}
-
-.filtro[aria-pressed='true'] {
-  background: var(--accent);
-  color: var(--on-accent);
-  box-shadow: none;
-  font-weight: 600;
-}
-
-.filtro[aria-pressed='true'] small {
-  color: rgba(18, 18, 18, 0.6);
-}
-
 .seccion {
   display: flex;
   align-items: baseline;
@@ -3189,10 +3140,6 @@ h2.sec-sub {
     height: 50px;
   }
 
-  .filtros {
-    padding: 0 16px 2px;
-  }
-
   .autos {
     gap: 8px;
     padding: 6px 16px 0;
@@ -3468,8 +3415,8 @@ h2.sec-sub {
     font-size: 40px;
   }
 
-  .inicio > .filtros {
-    padding-top: 24px;
+  .inicio > .autos {
+    padding-top: 22px;
   }
 
   /* Tarjetas compactas: varias por fila, igual de chicas que en el celular */
