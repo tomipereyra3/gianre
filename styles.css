@@ -53,6 +53,17 @@ html {
   background: var(--bg);
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  /* Sin espera por el doble toque: el botón responde al primer toque. */
+  touch-action: manipulation;
+}
+
+/* Mantener apretado un botón no selecciona texto ni abre el menú de iOS. */
+button,
+a,
+[role='button'] {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 html.locked {
@@ -543,6 +554,12 @@ textarea:focus-visible {
   gap: 12px;
   padding: 32px 16px calc(16px + env(safe-area-inset-bottom));
   background: linear-gradient(to top, var(--bg) 68%, transparent);
+  /* El degradé no tapa los toques de lo que se ve detrás; los botones sí responden. */
+  pointer-events: none;
+}
+
+.bottombar > * {
+  pointer-events: auto;
 }
 
 .bottombar > .btn {
@@ -775,6 +792,21 @@ input::-webkit-calendar-picker-indicator {
 
 /* ---------- Inicio */
 
+/* Franja de vidrio detrás de la hora y la batería: el buscador pegado arriba no queda debajo. */
+.screen.inicio::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 11;
+  height: env(safe-area-inset-top);
+  background: rgba(15, 15, 15, 0.6);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  backdrop-filter: blur(18px) saturate(160%);
+  pointer-events: none;
+}
+
 .home-head {
   display: flex;
   align-items: center;
@@ -831,12 +863,12 @@ input::-webkit-calendar-picker-indicator {
 
 .search {
   position: sticky;
-  top: 0;
   z-index: 10;
   display: flex;
   gap: 12px;
-  padding: calc(14px + env(safe-area-inset-top)) 20px 12px;
-  margin-top: calc(-1 * env(safe-area-inset-top));
+  /* Se pega justo debajo de la hora y la batería (iPhone instalada). */
+  top: env(safe-area-inset-top);
+  padding: 14px 20px 12px;
   background: var(--bg);
   transition: box-shadow 0.2s;
 }
@@ -1320,7 +1352,7 @@ input::-webkit-calendar-picker-indicator {
   height: 8px;
 }
 
-/* ---------- Nuevo diagnóstico: la patente para escribir */
+/* ---------- Nuevo diagnóstico: buscar por patente o por cliente */
 
 .nuevo-titulo {
   padding: 4px 20px 0;
@@ -1341,61 +1373,99 @@ input::-webkit-calendar-picker-indicator {
   color: var(--muted);
 }
 
-.plate-input {
-  --e: min(16.5px, calc((100vw - 40px) / 20));
-  font-size: var(--e);
-  position: relative;
-  display: block;
-  align-self: center;
-  width: 20em;
-  height: 6.5em;
-  margin: 24px auto 22px;
-  background: #fff;
-  border: 0.18em solid #0b0b0b;
-  border-radius: 0.42em;
-  overflow: hidden;
-  box-shadow: 0 24px 50px rgba(0, 0, 0, 0.55), 0 0 0 6px rgba(233, 245, 22, 0);
-  transition: box-shadow 0.2s;
+.lista-nuevo .label {
+  padding-top: 18px;
 }
 
-.plate-input:focus-within {
-  box-shadow: 0 24px 50px rgba(0, 0, 0, 0.55), 0 0 0 4px rgba(233, 245, 22, 0.35);
+.buscar-grande {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 64px;
+  margin: 18px 20px 6px;
+  padding: 0 22px;
+  border-radius: 32px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: #8c8c86;
+  transition: box-shadow 0.15s;
 }
 
-.plate-input input {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: calc(1.5 * var(--e));
-  bottom: 0;
-  width: 100%;
-  padding: 0 0.4em;
+.buscar-grande:focus-within {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.buscar-grande .icon {
+  flex: none;
+  width: 24px;
+  height: 24px;
+}
+
+.buscar-grande input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
   border: 0;
   outline: 0;
   background: transparent;
-  color: #0b0b0b;
-  text-align: center;
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.buscar-grande input::placeholder {
+  font-weight: 500;
+}
+
+/* Un nombre se suma como cliente: persona en amarillo. */
+.avatar.persona-nueva {
+  background: rgba(233, 245, 22, 0.12);
+  color: var(--accent);
+}
+
+/* Segundo paso: datos mínimos del vehículo y del cliente */
+.datos-id {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.datos-id b {
+  min-width: 0;
+  font-size: 18px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.datos-form {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  padding: 20px 20px 8px;
+}
+
+.datos-grupo {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.datos-sub {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  font: 700 3.5em/1 'Saira Extra Condensed', 'Archivo Narrow', sans-serif;
-  letter-spacing: 0.05em;
-  caret-color: var(--mercosur);
+  color: var(--faint);
 }
 
-.plate-input input::placeholder {
-  color: #c4c1b8;
-  font-size: 0.62em;
-  letter-spacing: 0.04em;
+.sheet .datos-sub {
+  margin: 6px 0 -4px;
 }
 
-.plate-input .pl-pais {
-  top: 0.52em;
-  color: #fff;
-  font-size: 0.92em;
-  letter-spacing: 0.02em;
-}
-
-.lista-nuevo .label {
-  padding-top: 18px;
+.nuevo-diag .bottombar .omitir {
+  flex: 0 0 auto;
+  padding: 0 26px;
 }
 
 /* ---------- Editor de diagnóstico */
@@ -1820,6 +1890,8 @@ input::-webkit-calendar-picker-indicator {
 }
 
 .h1-falta {
+  align-self: flex-start;
+  text-align: left;
   font-size: 18px;
   font-weight: 600;
   color: var(--muted);
@@ -2277,6 +2349,8 @@ input::-webkit-calendar-picker-indicator {
   margin: -8px 0 0;
 }
 
+/* Mientras se cierra, la capa ya no se come los toques. */
+.layer.closing { pointer-events: none; }
 .layer.closing .scrim { animation: fade 0.2s reverse forwards; }
 .layer.closing .sheet { animation: subir 0.2s reverse forwards; }
 .layer.viewer.closing { animation: fade 0.2s reverse forwards; }
@@ -2451,6 +2525,23 @@ input::-webkit-calendar-picker-indicator {
   gap: 0 6px;
   font-size: 14px;
   color: var(--muted);
+}
+
+.faltan {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.faltan .chip-add {
+  height: 34px;
+  padding: 0 14px 0 10px;
+  font-size: 13.5px;
+}
+
+.chip-add.falta-wa .icon {
+  color: #25d366;
 }
 
 .veh-cliente {
@@ -2937,6 +3028,7 @@ input::-webkit-calendar-picker-indicator {
 .bar-veh {
   flex: 1;
   min-width: 0;
+  text-align: left;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -3090,7 +3182,7 @@ h2.sec-sub {
   }
 
   .search {
-    padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+    padding: 10px 16px 10px;
   }
 
   .search label {
@@ -3185,8 +3277,13 @@ h2.sec-sub {
     height: 54px;
   }
 
-  .plate-input {
-    margin: 16px auto 14px;
+  .buscar-grande {
+    height: 60px;
+    margin: 14px 16px 4px;
+  }
+
+  .datos-form {
+    padding: 16px 16px 8px;
   }
 
   .nuevo-titulo h1 {

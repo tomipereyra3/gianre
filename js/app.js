@@ -23,6 +23,9 @@ function cargarLogo() {
 }
 cargarLogo();
 
+// Sin esto, iOS no muestra el estado "apretado" (:active) de los botones.
+document.addEventListener('touchstart', () => {}, { passive: true });
+
 // La imagen se dibuja con Archivo: la dejamos cargada desde el inicio.
 if (document.fonts) for (const f of FUENTES) document.fonts.load(f).catch(() => {});
 
@@ -947,10 +950,11 @@ function vacioInicio() {
 
 function nuevo() {
   let q = '';
+  const pantalla = h('div', { class: 'screen angosta nuevo-diag' });
   const resultados = h('div');
 
   const campo = h('input', {
-    placeholder: 'Patente o cliente',
+    placeholder: 'Patente o nombre del cliente',
     maxlength: '40',
     autocapitalize: 'words',
     autocomplete: 'off',
@@ -985,7 +989,7 @@ function nuevo() {
     const puedeCrear = t.length >= 2 && !(esPatente && exacto);
     // Una patente completa que no existe, o un nombre sin coincidencias: lo nuevo va primero.
     const nuevoPrimero = puedeCrear && !exacto && (!matches.length || (esPatente && qp.length >= 6));
-    const nueva = puedeCrear ? filaNueva(t, esPatente, qp) : null;
+    const nueva = puedeCrear ? filaNueva(t, esPatente, qp, !!exacto) : null;
 
     const filas = matches.map(({ a, c, t: ts }) =>
       filaAuto(a, c, S.hace(ts), () => empezarCon(a), a === exacto ? 'exacto' : ''),
@@ -999,13 +1003,18 @@ function nuevo() {
     );
   }
 
-  function filaNueva(t, esPatente, qp) {
+  // Patente: se ve la patente. Nombre: una persona para sumar como cliente.
+  function filaNueva(t, esPatente, qp, yaEsCliente) {
     return h(
       'button',
       { class: 'auto nueva', type: 'button', onclick: crear },
-      h('span', { class: 'auto-id' }, esPatente ? plate(qp) : avatar({ nombre: t })),
+      h('span', { class: 'auto-id' }, esPatente ? plate(qp) : h('span', { class: 'avatar persona-nueva' }, icon('personaMas'))),
       h('span', { class: 'auto-titulo' }, esPatente ? 'Agregar vehículo nuevo' : mayusculas(t)),
-      h('span', { class: 'auto-sub' }, esPatente ? 'Se crea con esta patente' : 'Agregar como cliente nuevo'),
+      h(
+        'span',
+        { class: 'auto-sub' },
+        esPatente ? 'Se crea con esta patente' : yaEsCliente ? 'Agregar otro vehículo' : 'Agregar cliente nuevo',
+      ),
       h('span', { class: 'auto-go', 'aria-hidden': 'true' }, icon('add')),
     );
   }
@@ -1018,38 +1027,111 @@ function nuevo() {
   function crear() {
     const t = q.trim();
     if (t.length < 2) return sacudir(campo);
-    let a;
-    if (S.parecePatente(t)) a = S.crearAuto({ patente: t });
-    else a = S.crearAuto({ clienteId: S.clientePara({ nombre: mayusculas(t) }).id });
-    S.save();
-    empezarCon(a);
+    pasoDatos(S.parecePatente(t) ? { patente: S.normPatente(t) } : { nombre: mayusculas(t) });
   }
 
-  actualizar();
-  enfocar = campo;
+  function pasoBuscar() {
+    fill(
+      pantalla,
+      bar(iconBtn('close', 'Cerrar', () => volver('/')), barTitulo('Crear diagnóstico'), hueco()),
+      h('div', { class: 'nuevo-titulo' }, h('h1', null, 'Seleccionar vehículo')),
+      h('label', { class: 'buscar-grande' }, icon('search'), campo),
+      h('div', { class: 'lista-nuevo' }, resultados),
+    );
+    actualizar();
+  }
 
-  return h(
-    'div',
-    { class: 'screen angosta' },
-    bar(iconBtn('close', 'Cerrar', () => volver('/')), barTitulo('Crear diagnóstico'), hueco()),
-    h(
-      'div',
-      { class: 'nuevo-titulo' },
-      h('h1', null, 'Seleccionar vehículo'),
-    ),
-    h(
-      'label',
-      { class: 'plate-input' },
-      h(
-        'span',
-        { class: 'pl-franja', 'aria-hidden': 'true' },
-        h('span', { class: 'pl-pais' }, 'REPÚBLICA ARGENTINA'),
-        h('span', { class: 'pl-bandera' }, h('i')),
+  // Lo mínimo del vehículo y del cliente. Todo se puede omitir y completar después.
+  function pasoDatos(base) {
+    refrescarListas();
+    const pat = base.patente ? null : input({ autocapitalize: 'characters', maxlength: '10', placeholder: 'Ej: AB 123 CD' });
+    const mod = input({ autocapitalize: 'words', placeholder: 'Ej: Fiat Cronos' });
+    const an = input({ inputmode: 'numeric', maxlength: '4' });
+    const nom = input({ value: base.nombre, autocapitalize: 'words', placeholder: 'Ej: Martín Gómez', list: 'dl-clientes' });
+    const tel = input({ type: 'tel', inputmode: 'tel', placeholder: 'Ej: 11 2345 6789', enterkeyhint: 'go' });
+    if (pat) sugerirAnio(pat, an);
+    else {
+      const x = S.anioPorPatente(base.patente);
+      if (x) an.placeholder = `≈ ${x}`;
+    }
+    completarTelefono(nom, tel);
+    const orden = [pat, mod, an, nom, tel].filter(Boolean);
+    orden.forEach((el, i) => enterPasaA(el, orden[i + 1] || (() => terminar(true))));
+
+    function terminar(conDatos) {
+      const v = (el) => (conDatos && el ? el.value.trim() : '');
+      const p = base.patente || S.normPatente(v(pat));
+      const c = S.clientePara({ nombre: v(nom) || base.nombre || '', telefono: v(tel) });
+      let a = p ? S.autoPorPatente(p) : null;
+      if (a) {
+        if (c) a.clienteId = c.id;
+        a.modelo ||= v(mod);
+        a.anio ||= v(an);
+      } else {
+        a = S.crearAuto({ patente: p, modelo: v(mod), anio: v(an), clienteId: c?.id || null });
+      }
+      S.save();
+      empezarCon(a);
+    }
+
+    fill(
+      pantalla,
+      bar(
+        iconBtn('back', 'Volver', () => {
+          pasoBuscar();
+          campo.focus({ preventScroll: true });
+        }),
+        barTitulo('Crear diagnóstico'),
+        hueco(),
       ),
-      campo,
-    ),
-    h('div', { class: 'lista-nuevo' }, resultados),
-  );
+      h(
+        'div',
+        { class: 'nuevo-titulo' },
+        h(
+          'div',
+          { class: 'datos-id' },
+          base.patente
+            ? plate(base.patente, 'sm')
+            : [h('span', { class: 'avatar persona-nueva sm' }, icon('persona')), h('b', null, base.nombre)],
+        ),
+        h('h1', null, 'Completar datos'),
+      ),
+      h(
+        'div',
+        { class: 'datos-form' },
+        h(
+          'section',
+          { class: 'datos-grupo' },
+          h('h2', { class: 'datos-sub' }, 'Vehículo'),
+          h(
+            'div',
+            { class: 'fields' },
+            pat ? field('Patente', pat) : null,
+            h('div', { class: 'fields-row' }, field('Marca y modelo', mod), field('Año', an, 'w-anio')),
+          ),
+        ),
+        h(
+          'section',
+          { class: 'datos-grupo' },
+          h('h2', { class: 'datos-sub' }, 'Cliente'),
+          h('div', { class: 'fields' }, field('Nombre y apellido', nom), field('Número de WhatsApp', tel)),
+        ),
+      ),
+      h(
+        'div',
+        { class: 'bottombar' },
+        h('button', { class: 'btn btn-gris omitir', type: 'button', onclick: () => terminar(false) }, 'Omitir'),
+        h('button', { class: 'btn btn-primary', type: 'button', onclick: () => terminar(true) }, 'Continuar', icon('flecha')),
+      ),
+    );
+    scrollTo(0, 0);
+    // En el mismo toque: así el teclado sigue arriba (iOS incluido).
+    orden[0].focus({ preventScroll: true });
+  }
+
+  pasoBuscar();
+  enfocar = campo;
+  return pantalla;
 }
 
 // ---------- Diagnóstico: se escribe como un mensaje de WhatsApp, una falla por renglón
@@ -1680,12 +1762,18 @@ function cabeceraVehiculo(a, c, chica) {
   const nombre = S.nombreAuto(a);
   const km = S.ultimoKm(a.id);
   const wa = S.waNumber(c?.telefono);
+  // Lo que falta, a un toque: abre la hoja con ese dato listo para escribir.
+  const faltan = [
+    !wa && ['wa', 'Agregar WhatsApp', 'wa'],
+    !a.patente && ['add', 'Patente', 'patente'],
+    !a.anio && ['add', 'Año', 'anio'],
+  ].filter(Boolean);
   if (chica) {
     return bar(
       iconBtn('back', 'Volver a vehículos', () => volver('/')),
       h(
-        'div',
-        { class: 'bar-veh' },
+        'button',
+        { class: 'bar-veh', type: 'button', 'aria-label': 'Datos del vehículo y del cliente', onclick: () => editarDatos(a) },
         identidad(a, c, 'xs'),
         h(
           'span',
@@ -1694,14 +1782,14 @@ function cabeceraVehiculo(a, c, chica) {
           h('small', null, [nombre ? c?.nombre : null, km ? `${S.fmtKm(km)} km` : null].filter(Boolean).join(' · ')),
         ),
       ),
-      iconBtn('edit', 'Editar vehículo', () => editarAuto(a)),
+      iconBtn('edit', 'Datos del vehículo y del cliente', () => editarDatos(a)),
     );
   }
   return [
     bar(
       iconBtn('back', 'Volver a vehículos', () => volver('/')),
       h('div', { class: 'bar-centro' }, identidad(a, c, 'sm')),
-      iconBtn('edit', 'Editar vehículo', () => editarAuto(a)),
+      iconBtn('edit', 'Datos del vehículo y del cliente', () => editarDatos(a)),
     ),
     h(
       'div',
@@ -1709,17 +1797,32 @@ function cabeceraVehiculo(a, c, chica) {
       h(
         'div',
         { class: 'veh-texto' },
-        nombre
+        a.modelo
           ? h('h1', null, nombre)
-          : h('button', { class: 'h1-falta', type: 'button', onclick: () => editarAuto(a) }, 'Agregar marca y modelo'),
+          : h('button', { class: 'h1-falta', type: 'button', onclick: () => editarDatos(a, 'modelo') }, 'Agregar marca y modelo'),
         h(
           'p',
           { class: 'veh-sub' },
           c
             ? h('button', { class: 'veh-cliente', type: 'button', onclick: () => go('/cliente/' + c.id) }, c.nombre || 'Cliente sin nombre')
-            : h('button', { class: 'veh-cliente', type: 'button', onclick: () => asignarCliente(a) }, 'Agregar cliente'),
+            : h('button', { class: 'veh-cliente', type: 'button', onclick: () => editarDatos(a, 'cliente') }, 'Agregar cliente'),
+          !a.modelo && a.anio ? h('span', null, `· ${a.anio}`) : null,
           km ? h('span', null, `· ${S.fmtKm(km)} km`) : null,
         ),
+        faltan.length
+          ? h(
+              'div',
+              { class: 'faltan' },
+              faltan.map(([ic, label, foco]) =>
+                h(
+                  'button',
+                  { class: `chip-add falta-${foco}`, type: 'button', onclick: () => editarDatos(a, foco) },
+                  icon(ic),
+                  label,
+                ),
+              ),
+            )
+          : null,
       ),
       wa
         ? h(
@@ -2151,13 +2254,20 @@ function sugerirAnio(pat, an) {
   poner();
 }
 
-function editarAuto(a) {
-  const pat = input({ value: S.fmtPatente(a.patente), autocapitalize: 'characters', maxlength: '10' });
+// Vehículo y cliente en una sola hoja. Todo es opcional: se completa cuando se tiene.
+function editarDatos(a, foco = null) {
+  refrescarListas();
+  const c = S.getCliente(a.clienteId);
+  const pat = input({ value: S.fmtPatente(a.patente), autocapitalize: 'characters', maxlength: '10', placeholder: 'Ej: AB 123 CD' });
   const mod = input({ value: a.modelo, autocapitalize: 'words', placeholder: 'Ej: Fiat Cronos' });
   const an = input({ value: a.anio, inputmode: 'numeric', maxlength: '4' });
+  const nom = input({ value: c?.nombre, autocapitalize: 'words', placeholder: 'Ej: Martín Gómez', list: c ? null : 'dl-clientes' });
+  const tel = input({ value: c?.telefono, type: 'tel', inputmode: 'tel', placeholder: 'Ej: 11 2345 6789' });
   sugerirAnio(pat, an);
+  if (!c) completarTelefono(nom, tel);
+  const campos = { patente: pat, modelo: mod, anio: an, cliente: nom, wa: tel };
   hoja(
-    'Editar vehículo',
+    'Datos del vehículo',
     [
       h(
         'div',
@@ -2165,6 +2275,8 @@ function editarAuto(a) {
         field('Patente', pat),
         h('div', { class: 'fields-row' }, field('Marca y modelo', mod), field('Año', an, 'w-anio')),
       ),
+      h('h3', { class: 'datos-sub' }, 'Cliente'),
+      h('div', { class: 'fields' }, field('Nombre y apellido', nom), field('Número de WhatsApp', tel)),
       h('button', { class: 'btn btn-primary block', type: 'submit' }, 'Guardar cambios'),
       h(
         'button',
@@ -2182,11 +2294,24 @@ function editarAuto(a) {
         a.patente = p;
         a.modelo = mod.value.trim();
         a.anio = an.value.trim();
+        const nombre = nom.value.trim();
+        const telefono = tel.value.trim();
+        if (c) {
+          if (nombre || telefono) {
+            c.nombre = nombre;
+            c.telefono = telefono;
+          }
+        } else {
+          const nuevo = S.clientePara({ nombre, telefono });
+          if (nuevo) a.clienteId = nuevo.id;
+        }
         S.save();
         cerrarCapa(refrescar);
       },
     },
   );
+  // En el mismo toque que abrió la hoja, así sube el teclado (iOS incluido).
+  campos[foco]?.focus({ preventScroll: true });
 }
 
 function borrarAutoUI(a) {
@@ -2204,30 +2329,6 @@ function borrarAutoUI(a) {
       });
     },
   });
-}
-
-function asignarCliente(a) {
-  refrescarListas();
-  const nom = input({ placeholder: 'Ej: Martín Gómez', autocapitalize: 'words', list: 'dl-clientes' });
-  const tel = input({ type: 'tel', inputmode: 'tel', placeholder: 'Ej: 11 2345 6789' });
-  completarTelefono(nom, tel);
-  hoja(
-    'Agregar cliente',
-    [
-      h('div', { class: 'fields' }, field('Nombre y apellido', nom), field('Número de WhatsApp', tel)),
-      h('button', { class: 'btn btn-primary block', type: 'submit' }, 'Guardar cliente'),
-    ],
-    {
-      foco: true,
-      onSubmit: () => {
-        const c = S.clientePara({ nombre: nom.value, telefono: tel.value });
-        if (!c) return sacudir(nom);
-        a.clienteId = c.id;
-        S.save();
-        cerrarCapa(refrescar);
-      },
-    },
-  );
 }
 
 // ---------- Ficha del cliente
