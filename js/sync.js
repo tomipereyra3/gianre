@@ -18,9 +18,9 @@ async function rpc(fn, args = {}) {
     e.status = r.status;
     throw e;
   }
-  // Algunas funciones no devuelven nada (204 / cuerpo vacío).
-  const t = await r.text();
-  return t ? JSON.parse(t) : null;
+  // Las funciones que no devuelven nada responden 204, sin cuerpo.
+  if (r.status === 204) return null;
+  return r.json();
 }
 
 // 'apagado' (todavía no hay taller) · 'ok' · 'subiendo' · 'sin-conexion' · 'error'
