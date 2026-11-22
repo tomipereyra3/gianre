@@ -1,5 +1,5 @@
 // Funciona sin señal: primero la red, si no hay, lo guardado.
-const CACHE = 'gianre-v19';
+const CACHE = 'gianre-v20';
 const BASE = [
   './',
   './index.html',
@@ -38,5 +38,40 @@ self.addEventListener('fetch', (e) => {
         return res;
       })
       .catch(() => caches.match(req, { ignoreSearch: true })),
+  );
+});
+
+// ---------- Avisos: llegan cifrados desde el servidor y se muestran como notificación.
+
+self.addEventListener('push', (e) => {
+  let d = {};
+  try {
+    d = e.data ? e.data.json() : {};
+  } catch {
+    d = { cuerpo: e.data ? e.data.text() : '' };
+  }
+  e.waitUntil(
+    self.registration.showNotification(d.titulo || 'Gianre', {
+      body: d.cuerpo || '',
+      icon: './icon-192.png',
+      badge: './icon-192.png',
+      tag: d.tag || 'gianre',
+      data: { url: d.url || './' },
+    }),
+  );
+});
+
+// Tocar el aviso abre la app (o la trae al frente si ya estaba abierta).
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = new URL(e.notification.data?.url || './', self.registration.scope).href;
+  e.waitUntil(
+    (async () => {
+      const abiertas = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      for (const c of abiertas) {
+        if (c.url.startsWith(self.registration.scope) && 'focus' in c) return c.focus();
+      }
+      return self.clients.openWindow(url);
+    })(),
   );
 });

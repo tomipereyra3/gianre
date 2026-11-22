@@ -18,7 +18,9 @@ async function rpc(fn, args = {}) {
     e.status = r.status;
     throw e;
   }
-  return r.json();
+  // Algunas funciones no devuelven nada (204 / cuerpo vacío).
+  const t = await r.text();
+  return t ? JSON.parse(t) : null;
 }
 
 // 'apagado' (todavía no hay taller) · 'ok' · 'subiendo' · 'sin-conexion' · 'error'
@@ -98,7 +100,7 @@ export function iniciar(onTraer) {
     if (!document.hidden) sincronizar();
   }, 20000);
   // Si se abrió con un link de vinculación, primero se vincula.
-  if (!location.hash.startsWith('#/vincular/')) sincronizar();
+  if (!location.hash.startsWith('#/vincular/')) sincronizar().then(renovarAvisos);
 }
 
 // Código corto para sumar otro dispositivo (vence a los 15 minutos).
@@ -136,6 +138,7 @@ async function usarClave(clave, recuperacion = null) {
   S.marcarTodo({ menosTaller: true });
   await sincronizar();
   if (estado !== 'ok' && estado !== 'subiendo') throw new Error('no sincronizó');
+  renovarAvisos();
 }
 
 export async function vincular(codigo) {
@@ -196,4 +199,83 @@ export async function entrarConSesion(token, email = emailDelToken(token)) {
 export async function entrarConEmail(email, codigo) {
   const sesion = await auth('verify', { type: 'email', email, token: codigo });
   return entrarConSesion(sesion.access_token, email);
+}
+
+// ---------- Avisos al celular: los pendientes de cada mañana (Web Push).
+// En iPhone solo funcionan con la app instalada en la pantalla de inicio.
+
+const AVISOS = 'https://lkbbgyskjyyhepdxpbej.supabase.co/functions/v1/gianre-avisos';
+
+export const avisosPosibles = () =>
+  'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+
+const permisoAvisos = () => (avisosPosibles() ? Notification.permission : 'denied');
+
+function deB64u(t) {
+  t = t.replace(/-/g, '+').replace(/_/g, '/');
+  t += '='.repeat((4 - (t.length % 4)) % 4);
+  return Uint8Array.from(atob(t), (c) => c.charCodeAt(0));
+}
+
+async function suscripcion() {
+  const reg = await navigator.serviceWorker.ready;
+  return reg.pushManager.getSubscription();
+}
+
+async function anotarAviso(sub) {
+  const j = sub.toJSON();
+  await rpc('gianre_aviso_guardar', {
+    p_clave: S.sync.clave,
+    p_endpoint: j.endpoint,
+    p_p256dh: j.keys.p256dh,
+    p_auth: j.keys.auth,
+  });
+}
+
+// 'imposible' · 'bloqueados' · 'activos' · 'apagados'
+export async function estadoAvisos() {
+  if (!avisosPosibles()) return 'imposible';
+  const p = permisoAvisos();
+  if (p === 'denied') return 'bloqueados';
+  if (p === 'granted' && (await suscripcion().catch(() => null))) return 'activos';
+  return 'apagados';
+}
+
+// Se llama desde un toque: iOS solo pide permiso así.
+export async function activarAvisos() {
+  const permiso = await Notification.requestPermission();
+  if (permiso !== 'granted') {
+    const e = new Error('sin permiso');
+    e.permiso = permiso;
+    throw e;
+  }
+  if (!S.sync.clave) await sincronizar();
+  if (!S.sync.clave) throw new Error('sin clave');
+  const reg = await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub) {
+    const { publica } = await (await fetch(AVISOS)).json();
+    sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: deB64u(publica) });
+  }
+  await anotarAviso(sub);
+  // Un primer aviso al toque: confirma que llegan.
+  fetch(AVISOS, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clave: S.sync.clave, endpoint: sub.endpoint }),
+  }).catch(() => {});
+}
+
+export async function desactivarAvisos() {
+  const sub = await suscripcion().catch(() => null);
+  if (!sub) return;
+  if (S.sync.clave) await rpc('gianre_aviso_quitar', { p_clave: S.sync.clave, p_endpoint: sub.endpoint }).catch(() => {});
+  await sub.unsubscribe().catch(() => {});
+}
+
+// Al abrir y al cambiar de taller: este celular se vuelve a anotar con la clave actual.
+export async function renovarAvisos() {
+  if (!S.sync.clave || permisoAvisos() !== 'granted') return;
+  const sub = await suscripcion().catch(() => null);
+  if (sub) await anotarAviso(sub).catch(() => {});
 }

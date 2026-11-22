@@ -732,6 +732,121 @@ function avisoCuenta() {
   return el;
 }
 
+// ---------- Avisos de pendientes en el celular
+
+const KEY_RECORDAR_AVISOS = 'gianre:recordar-avisos';
+
+async function activarAvisosUI(boton) {
+  const antes = boton?.textContent;
+  if (boton) {
+    boton.disabled = true;
+    boton.textContent = 'Activando…';
+  }
+  try {
+    await Sync.activarAvisos();
+    snack('Avisos activados');
+  } catch (e) {
+    snack(e.permiso ? 'El celular no dio permiso para los avisos' : 'No se pudieron activar los avisos');
+  }
+  if (boton?.isConnected) {
+    boton.disabled = false;
+    boton.textContent = antes;
+  }
+  refrescar();
+}
+
+// Tarjeta en el inicio, una sola vez (o hasta "Ahora no"): solo donde los avisos pueden llegar.
+function avisoAvisos() {
+  let pospuesto = 0;
+  try {
+    pospuesto = Number(localStorage.getItem(KEY_RECORDAR_AVISOS)) || 0;
+  } catch {}
+  if (
+    !Sync.avisosPosibles() ||
+    Notification.permission !== 'default' ||
+    pospuesto > Date.now() ||
+    !S.db.diagnosticos.some((d) => !S.vacio(d))
+  )
+    return null;
+  const activar = h('button', { class: 'btn btn-primary btn-sm', type: 'button', onclick: () => activarAvisosUI(activar) }, icon('campana'), 'Activar avisos');
+  const el = h(
+    'div',
+    { class: 'aviso' },
+    h('b', null, 'Recibí los pendientes cada mañana'),
+    h(
+      'div',
+      { class: 'aviso-acciones' },
+      activar,
+      h(
+        'button',
+        {
+          class: 'btn-text',
+          type: 'button',
+          onclick: () => {
+            try {
+              localStorage.setItem(KEY_RECORDAR_AVISOS, String(Date.now() + 14 * 864e5));
+            } catch {}
+            el.remove();
+          },
+        },
+        'Ahora no',
+      ),
+    ),
+  );
+  return el;
+}
+
+// Fila de Ajustes: activar, ver que están activos o por qué no se puede.
+function filaAvisos() {
+  const card = h('div', { class: 'card' });
+  const fila = (sub, accion) =>
+    h(
+      'div',
+      { class: 'row' },
+      h('span', { class: 'avatar mas' }, icon('campana')),
+      h('span', { class: 'row-main' }, h('span', { class: 'row-title' }, 'Pendientes cada mañana'), h('span', { class: 'row-sub' }, sub)),
+      accion,
+    );
+  const pintar = async () => {
+    const e = await Sync.estadoAvisos();
+    if (e === 'imposible') {
+      const iphone = /iPhone|iPad|iPod/.test(navigator.userAgent) && !instalada();
+      return fill(
+        card,
+        fila(
+          iphone ? 'Instalá la app para recibirlos' : 'Este navegador no recibe avisos',
+          iphone ? h('button', { class: 'btn btn-primary btn-sm', type: 'button', onclick: instalar }, 'Instalar') : null,
+        ),
+      );
+    }
+    if (e === 'bloqueados') return fill(card, fila('Bloqueados en los ajustes del celular', null));
+    if (e === 'activos')
+      return fill(
+        card,
+        fila(
+          'Activados · 8:30, de lunes a sábado',
+          h(
+            'button',
+            {
+              class: 'btn-text',
+              type: 'button',
+              onclick: async () => {
+                await Sync.desactivarAvisos();
+                snack('Avisos desactivados');
+                pintar();
+              },
+            },
+            'Desactivar',
+          ),
+        ),
+      );
+    const activar = h('button', { class: 'btn btn-primary btn-sm', type: 'button', onclick: () => activarAvisosUI(activar) }, 'Activar');
+    fill(card, fila('8:30, de lunes a sábado', activar));
+  };
+  pintar();
+  return card;
+}
+
 function tengoCodigo() {
   const campo = input({
     class: 'input big codigo',
@@ -893,7 +1008,7 @@ function inicio() {
         : null,
       h('button', { class: 'btn btn-primary solo-compu', type: 'button', onclick: nuevoDiag }, icon('add'), 'Crear diagnóstico'),
     ),
-    avisoCuenta(),
+    avisoCuenta() || avisoAvisos(),
     lista,
     cta('Crear diagnóstico', nuevoDiag),
   );
@@ -2536,6 +2651,8 @@ function ajustes() {
       ),
     ),
     h('div', { class: 'fields pad' }, field('Nombre del taller', nombre), field('WhatsApp del taller', tel), field('Dirección', dir)),
+    titulo('Avisos'),
+    filaAvisos(),
     titulo('Cuenta'),
     h(
       'div',
